@@ -12,11 +12,21 @@ export interface Subscription {
 
 export type Session = { uid: string } | "invalid" | "unverified";
 
+interface Readiness {
+  ready: boolean;
+  configured: {
+    SUPABASE_URL: boolean;
+    SUPABASE_PUBLISHABLE_KEY: boolean;
+    GEMINI_MODEL: boolean;
+  };
+}
+
 export interface Dependencies {
   verify(token: string): Promise<Session>;
   entitlement(uid: string, consume: boolean): Promise<Subscription & { granted: boolean }>;
   analyze(input: TaskInput): Promise<unknown>;
   now?: () => Date;
+  readiness?: () => Readiness;
 }
 
 const MAX_BODY_BYTES = 32 * 1024;
@@ -74,6 +84,11 @@ async function readTask(request: Request): Promise<TaskInput | undefined | "too-
 export function createHandler(deps: Dependencies) {
   return async (request: Request): Promise<Response> => {
     const path = new URL(request.url).pathname;
+    if (path === "/health" && deps.readiness) {
+      if (request.method !== "GET") return error("METHOD_NOT_ALLOWED", { Allow: "GET" });
+      const health = deps.readiness();
+      return json(health, health.ready ? 200 : 503);
+    }
     const method = path === "/analyze-task" ? "POST" : "GET";
     if (path !== "/auth/session" && path !== "/subscription" && path !== "/analyze-task") {
       return error("NOT_FOUND");

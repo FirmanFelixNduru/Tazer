@@ -127,7 +127,7 @@ class TazerViewModel(
                 } catch (failure: CancellationException) {
                     throw failure
                 } catch (failure: IntegrationException) {
-                    if (failure.code == IntegrationError.INVALID_AUTH && _state.value.uid == account.uid.value) {
+                    if (failure.rejectsSession() && _state.value.uid == account.uid.value) {
                         reportIntegrationFailure(failure)
                     }
                 }
@@ -292,7 +292,7 @@ class TazerViewModel(
 
     fun reportIntegrationFailure(failure: IntegrationException) {
         val message = failure.message ?: "Layanan sementara tidak tersedia."
-        if (failure.code == IntegrationError.INVALID_AUTH && _state.value.uid != null && !_state.value.demo) {
+        if (failure.rejectsSession() && _state.value.uid != null && !_state.value.demo) {
             val uid = requireNotNull(_state.value.uid)
             ownerJob?.cancel()
             _state.value = TazerState(message = message)
@@ -432,3 +432,6 @@ class TazerViewModel(
 }
 
 internal fun localDate(timestamp: Long, zone: ZoneId) = Instant.ofEpochMilli(timestamp).atZone(zone).toLocalDate()
+
+private fun IntegrationException.rejectsSession() =
+    code == IntegrationError.INVALID_AUTH || code == IntegrationError.EMAIL_UNVERIFIED

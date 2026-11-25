@@ -29,6 +29,7 @@ Supabase Free menyediakan Auth dan PostgreSQL. Android memakai email/password de
 | `GET /auth/session` | Authorization: Bearer | `200 { "uid": "u1" }` |
 | `GET /subscription` | Authorization: Bearer | `200 { "tier": "PRO", "monthlyLimit": 20, "remaining": 19, "resetsAt": "2026-12-01T00:00:00Z" }` |
 | `POST /analyze-task` | Bearer dan JSON input | `200 { "difficultyScore": 4, "estimatedMinutes": 150 }` |
+| `GET /health` | Tanpa autentikasi | `200` jika binding siap atau `503` jika belum lengkap. Respons hanya memuat `ready` dan boolean konfigurasi publik `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `GEMINI_MODEL`. Pemeriksaan ini membaca konfigurasi tanpa memanggil layanan eksternal. |
 
 ### Entitlement akun dan kuota bulanan
 

@@ -35,7 +35,7 @@ test("Supabase auth then atomic quota, then Gemini and Groq fallback with one ch
     const url = new URL(String(resource));
     const headers = new Headers(init?.headers);
     hits.push(url.pathname);
-    assert.equal(init?.redirect, "error");
+    assert.equal(init?.redirect, "manual");
     assert.ok(init?.signal);
     if (url.pathname === "/auth/v1/user") {
       assert.equal(headers.get("apikey"), env.SUPABASE_PUBLISHABLE_KEY);
@@ -83,8 +83,10 @@ test("Supabase auth then atomic quota, then Gemini and Groq fallback with one ch
 
 test("Supabase rejects bad, expired, revoked, or unverified sessions and fails closed on backend errors", async () => {
   const cases: [number, object, number, string][] = [
+    [302, {}, 503, "VERIFICATION_UNAVAILABLE"],
     [401, { code: "bad_jwt" }, 401, "INVALID_AUTH"],
     [400, { error_code: "bad_jwt", msg: "JWT expired" }, 401, "INVALID_AUTH"],
+    [403, { code: 403, error_code: "bad_jwt" }, 401, "INVALID_AUTH"],
     [403, { code: "session_not_found" }, 401, "INVALID_AUTH"],
     [200, { ...auth, email_confirmed_at: null, confirmed_at: auth.email_confirmed_at }, 403, "EMAIL_UNVERIFIED"],
     [200, { ...auth, id: "malformed-uid" }, 503, "VERIFICATION_UNAVAILABLE"],
@@ -160,4 +162,59 @@ test("Workers entry point fails closed even when presented a local demo token", 
   }), {});
   assert.equal(response.status, 503);
   assert.equal((await response.json()).error.code, "VERIFICATION_UNAVAILABLE");
+});
+
+test("public Worker health reports only configuration booleans and makes no upstream requests", async t => {
+  const fetcher = t.mock.method(globalThis, "fetch", async () => {
+    throw new Error("Unexpected upstream request");
+  });
+  const request = new Request("https://backend.example.invalid/health");
+  const { GROQ_MODEL: _groqModel, GROQ_API_KEY: _groqKey, ...requiredEnv } = env;
+  const configured = { SUPABASE_URL: true, SUPABASE_PUBLISHABLE_KEY: true, GEMINI_MODEL: true };
+  const response = await worker.fetch(request, { ...requiredEnv, GEMINI_MODEL: "gemini-3.5-flash-lite" });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("Cache-Control"), "no-store");
+  assert.deepEqual(await response.json(), { ready: true, configured });
+
+  for (const key of Object.keys(configured) as Array<keyof typeof configured>) {
+    const missing = await worker.fetch(request, { ...requiredEnv, [key]: undefined });
+    assert.equal(missing.status, 503, key);
+    assert.deepEqual(await missing.json(), { ready: false, configured: { ...configured, [key]: false } });
+  }
+  for (const key of ["SUPABASE_SECRET_KEY", "GEMINI_API_KEY"]) {
+    const missing = await worker.fetch(request, { ...env, [key]: "  " });
+    assert.equal(missing.status, 503, key);
+    assert.deepEqual(await missing.json(), { ready: false, configured });
+  }
+  const invalid = await worker.fetch(request, {
+    ...requiredEnv,
+    SUPABASE_URL: "http://project.example.invalid",
+    SUPABASE_PUBLISHABLE_KEY: "sb_publishable_",
+    GEMINI_MODEL: "models/gemini-test",
+  });
+  assert.equal(invalid.status, 503);
+  assert.deepEqual(await invalid.json(), {
+    ready: false,
+    configured: { SUPABASE_URL: false, SUPABASE_PUBLISHABLE_KEY: false, GEMINI_MODEL: false },
+  });
+
+  const wrongMethod = await worker.fetch(new Request(request.url, { method: "POST" }), env);
+  assert.equal(wrongMethod.status, 405);
+  assert.equal(wrongMethod.headers.get("Allow"), "GET");
+  assert.equal(fetcher.mock.callCount(), 0);
+});
+
+test("Worker endpoints still require a Bearer token whether or not the Worker is ready", async t => {
+  const fetcher = t.mock.method(globalThis, "fetch", async () => {
+    throw new Error("Unexpected upstream request");
+  });
+  for (const config of [env, {}]) {
+    for (const [method, path] of [["GET", "/auth/session"], ["GET", "/subscription"], ["POST", "/analyze-task"]]) {
+      const response = await worker.fetch(new Request(`https://backend.example.invalid${path}`, { method }), config);
+      assert.equal(response.status, 401, path);
+      assert.equal(response.headers.get("WWW-Authenticate"), "Bearer");
+      assert.equal((await response.json()).error.code, "INVALID_AUTH");
+    }
+  }
+  assert.equal(fetcher.mock.callCount(), 0);
 });

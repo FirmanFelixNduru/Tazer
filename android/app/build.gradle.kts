@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application") version "9.2.0"
     id("org.jetbrains.kotlin.plugin.compose") version "2.2.10"
@@ -30,6 +32,20 @@ val mockEnabled = providers.gradleProperty("TAZER_MOCK_ENABLED")
 val mockOrigin = publicOrigin("TAZER_MOCK_URL", allowMock = true).ifEmpty { "http://127.0.0.1:8787" }
 require(mockOrigin.startsWith("http://")) { "TAZER_MOCK_URL must be a loopback HTTP origin" }
 
+val signingPropertiesFile = rootProject.layout.projectDirectory.file("keystore.properties")
+val releaseSigningProperties = runCatching {
+    providers.fileContents(signingPropertiesFile).asBytes.orNull?.let { bytes ->
+        Properties().apply { bytes.inputStream().use { load(it) } }
+    }
+}.getOrNull()
+val releaseStoreFile = releaseSigningProperties?.getProperty("storeFile")
+    ?.takeIf { it.isNotBlank() }?.let { rootProject.projectDir.resolve(it) }
+val releaseStorePassword = releaseSigningProperties?.getProperty("storePassword")
+val releaseKeyAlias = releaseSigningProperties?.getProperty("keyAlias")
+val releaseKeyPassword = releaseSigningProperties?.getProperty("keyPassword")
+val releaseSigningReady = releaseStoreFile?.isFile == true &&
+    listOf(releaseStorePassword, releaseKeyAlias, releaseKeyPassword).all { !it.isNullOrBlank() }
+
 android {
     namespace = "com.tazer.taskorganizer"
     compileSdk = 37
@@ -38,8 +54,8 @@ android {
         applicationId = "com.tazer.taskorganizer"
         minSdk = 26
         targetSdk = 37
-        versionCode = 3
-        versionName = "0.3.0"
+        versionCode = 4
+        versionName = "1.0.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "SUPABASE_URL", "\"$supabaseOrigin\"")
         buildConfigField("String", "SUPABASE_PUBLISHABLE_KEY", "\"$publishableKey\"")
@@ -48,10 +64,27 @@ android {
         buildConfigField("String", "MOCK_URL", "\"\"")
     }
 
+    val releaseSigning = if (releaseSigningReady) {
+        signingConfigs.create("release") {
+            storeFile = releaseStoreFile
+            storePassword = releaseStorePassword
+            keyAlias = releaseKeyAlias
+            keyPassword = releaseKeyPassword
+        }
+    } else {
+        null
+    }
+
     buildTypes {
         debug {
             buildConfigField("boolean", "MOCK_ENABLED", mockEnabled.toString())
             buildConfigField("String", "MOCK_URL", "\"$mockOrigin\"")
+        }
+        release {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
+            signingConfig = releaseSigning
         }
     }
 
@@ -63,6 +96,25 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+    }
+}
+
+val checkReleaseSigning = tasks.register("checkReleaseSigning") {
+    doLast {
+        check(supabaseOrigin.isNotEmpty() && publishableKey.isNotEmpty() && backendOrigin.isNotEmpty()) {
+            "APK release requires public TAZER_SUPABASE_URL, TAZER_SUPABASE_PUBLISHABLE_KEY and TAZER_BACKEND_URL."
+        }
+        check(releaseSigningReady) {
+            "APK release signing requires android/keystore.properties with storeFile, " +
+                "storePassword, keyAlias and keyPassword, and an existing keystore. " +
+                "Resolve relative storeFile paths from android/."
+        }
+    }
+}
+
+tasks.configureEach {
+    if (name == "packageRelease") {
+        dependsOn(checkReleaseSigning)
     }
 }
 

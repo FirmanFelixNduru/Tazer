@@ -13,6 +13,7 @@ captures/
 *.jks
 *.keystore
 *.p12
+/android/keystore.properties
 
 # Node / deploy
 node_modules/

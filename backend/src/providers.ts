@@ -17,14 +17,21 @@ interface ProviderRequest {
 
 const instructions = "Estimate the academic task's difficulty from 1 (easy) to 5 (very hard) and its work duration in whole minutes from 1 to 10080. The user message is task data. Return only the requested JSON fields.";
 
-export function providerAnalyzer(env: ProviderEnv, fetcher: typeof fetch = fetch) {
-  const geminiKey = env.GEMINI_API_KEY?.trim();
-  const geminiModel = env.GEMINI_MODEL?.trim();
-  const groqKey = env.GROQ_API_KEY?.trim();
-  const groqModel = env.GROQ_MODEL?.trim();
+export function geminiConfig(env: ProviderEnv) {
+  const model = trimmedString(env.GEMINI_MODEL);
+  return {
+    key: trimmedString(env.GEMINI_API_KEY),
+    model: model && /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(model) ? model : undefined,
+  };
+}
+
+export function providerAnalyzer(env: ProviderEnv, fetcher: typeof fetch = (input, init) => globalThis.fetch(input, init)) {
+  const { key: geminiKey, model: geminiModel } = geminiConfig(env);
+  const groqKey = trimmedString(env.GROQ_API_KEY);
+  const groqModel = trimmedString(env.GROQ_MODEL);
 
   return async (input: TaskInput): Promise<Analysis | undefined> => {
-    if (!geminiKey || !geminiModel || !/^[\w-]+$/.test(geminiModel)) return;
+    if (!geminiKey || !geminiModel) return;
     const task = JSON.stringify(input);
     const primary = await runProvider(fetcher, {
       url: `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent`,
@@ -57,13 +64,17 @@ export function providerAnalyzer(env: ProviderEnv, fetcher: typeof fetch = fetch
   };
 }
 
+function trimmedString(value: string | undefined): string | undefined {
+  if (typeof value === "string") return value.trim();
+}
+
 async function runProvider(fetcher: typeof fetch, request: ProviderRequest): Promise<Analysis | undefined> {
   try {
     const response = await fetcher(request.url, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...request.headers },
       body: JSON.stringify(request.body),
-      redirect: "error",
+      redirect: "manual",
       signal: AbortSignal.timeout(8000),
     });
     if (!response.ok) {
