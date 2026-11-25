@@ -38,3 +38,16 @@ A fresh process gives `demo-pro` 20 monthly slots. The sample analysis returns `
 5. For Cloudflare Workers Free staging, use the included Wrangler configuration and configure the same Supabase and provider bindings in the Worker, using secrets for server and API keys. The Worker always uses the real adapter. Run the smoke requests over its HTTPS staging URL with a staging token.
 
 When verification is unavailable, the API returns `503 VERIFICATION_UNAVAILABLE`. A valid PRO analysis with an unavailable provider returns `502 AI_UNAVAILABLE` so Android can offer offline analysis. An exhausted account gets `429 QUOTA_EXHAUSTED` with `Retry-After` in seconds. The API returns JSON error envelopes and sets `Cache-Control: no-store`.
+
+## Android client
+
+To test the mock proxy from Android, start the loopback server above, then run the following from `android/`. The standalone demo remains available in debug builds.
+
+```powershell
+adb reverse tcp:8787 tcp:8787
+.\gradlew.bat :app:assembleDebug -PTAZER_MOCK_ENABLED=true
+```
+
+Install `app/build/outputs/apk/debug/app-debug.apk` and choose **PRO** under **Uji backend lokal**. An analysis of a valid task uses one slot. The default Android mock origin is `http://127.0.0.1:8787`. `TAZER_MOCK_URL` can point to an allowed emulator loopback host. Mock access is limited to debug builds.
+
+For staging, set `TAZER_SUPABASE_URL`, `TAZER_SUPABASE_PUBLISHABLE_KEY`, and `TAZER_BACKEND_URL` in the Android build environment. Add the redirect pattern `tazer://auth/callback\?state=*` to Supabase Auth for the per-request PKCE state. Configure the Google provider plus email confirmation and recovery. Keep `SUPABASE_SECRET_KEY`, `GEMINI_API_KEY`, and optional `GROQ_API_KEY` in the Worker secret store. Set `GEMINI_MODEL` and optional `GROQ_MODEL` to models available to the staging free-tier accounts. [Supabase redirect allowlist](https://supabase.com/docs/guides/auth/redirect-urls)
