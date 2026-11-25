@@ -1,6 +1,6 @@
 # Kontrak data dan API
 
-Kontrak v1 ? revisi Wave 1 Rp 0. Perilaku perencanaan dan timer mengikuti [spesifikasi scheduler](SCHEDULER_SPEC.md).
+Kontrak v1 · revisi Wave 1 Rp 0. Perilaku perencanaan dan timer mengikuti [spesifikasi scheduler](SCHEDULER_SPEC.md).
 
 ## Room
 
@@ -22,7 +22,7 @@ Gunakan ID UUID string untuk tugas, blok tetap, dan sesi, serta Supabase Auth UI
 
 ## Autentikasi dan endpoint HTTP
 
-Supabase Free menyediakan Auth dan PostgreSQL. Android memakai email/password dengan verifikasi dan reset email, serta Google OAuth melalui Supabase untuk integrasi Wave 2. Backend memakai Supabase Auth `GET /auth/v1/user` dengan access token Bearer dan project publishable key. Ambil UID dari respons Supabase yang sah dan tolak akun tanpa email terverifikasi. Pada `401`, Android mencoba refresh satu kali. Room selalu difilter UID aktif. Sign-out menutup akses UID lama dan pada Wave 3 menghentikan timer serta alarm akun lama. Debug Wave 1 memakai akun demo lokal dan mode HTTP mock yang hanya bind loopback. Release memakai HTTPS dan konfigurasi Supabase nyata. [Supabase Auth](https://supabase.com/docs/guides/auth) ? [Supabase Free](https://supabase.com/pricing)
+Supabase Free menyediakan Auth dan PostgreSQL. Android memakai email/password dengan verifikasi dan reset email, serta Google OAuth melalui Supabase untuk integrasi Wave 2. Backend memakai Supabase Auth `GET /auth/v1/user` dengan access token Bearer dan project publishable key. Ambil UID dari respons Supabase yang sah dan tolak akun tanpa email terverifikasi. Pada `401`, Android mencoba refresh satu kali. Room selalu difilter UID aktif. Sign-out menutup akses UID lama dan pada Wave 3 menghentikan timer serta alarm akun lama. Debug Wave 1 memakai akun demo lokal dan mode HTTP mock yang hanya bind loopback. Release memakai HTTPS dan konfigurasi Supabase nyata. [Supabase Auth](https://supabase.com/docs/guides/auth) · [Supabase Free](https://supabase.com/pricing)
 
 | Endpoint | Request | Respons sukses |
 | --- | --- | --- |
@@ -33,14 +33,14 @@ Supabase Free menyediakan Auth dan PostgreSQL. Android memakai email/password de
 ### Entitlement akun dan kuota bulanan
 
 1. `FREE` menggunakan analisis offline. `PRO` memakai AI server, default 20 permintaan per UID per bulan UTC. Operator menetapkan PRO gratis melalui Supabase. `BYOK` memakai provider langsung dari Android dengan key milik user, tanpa konsumsi kuota server. Default untuk akun tanpa row adalah FREE. FREE/BYOK mendapat `monthlyLimit: 0` dan `remaining: 0`.
-2. Simpan tier di `account_entitlements(user_id, tier)` dan penggunaan di `analysis_usage(user_id, month_start, used)`. Hanya role server memiliki akses. Server menentukan tier dan mengambil slot kuota lewat RPC PostgreSQL transaksional. Konsumsi satu slot per permintaan valid yang diterima, termasuk jika provider kemudian gagal. Fallback Gemini ? Groq tidak mengurangi slot tambahan. Waktu reset adalah awal bulan UTC berikutnya.
+2. Simpan tier di `account_entitlements(user_id, tier)` dan penggunaan di `analysis_usage(user_id, month_start, used)`. Hanya role server memiliki akses. Server menentukan tier dan mengambil slot kuota lewat RPC PostgreSQL transaksional. Konsumsi satu slot per permintaan valid yang diterima, termasuk jika provider kemudian gagal. Fallback Gemini ke Groq tidak mengurangi slot tambahan. Waktu reset adalah awal bulan UTC berikutnya.
 3. Backend memverifikasi sesi dan entitlement untuk setiap analisis sebelum provider dipanggil. Jika verifikasi Auth atau database tidak tersedia, kembalikan `503`. Jika tier bukan PRO, kembalikan `403`. Jika kuota PRO habis, kembalikan `429`. Mock lokal meniru tier dan kuota dengan penyimpanan in-memory.
 4. Kunci project khusus server berada di env/secret store. Aplikasi memuat konfigurasi publik Supabase saja. Untuk BYOK Wave 2, simpan ciphertext AES-GCM dengan kunci dari Android Keystore per akun dan eksklusi backup. Kirim key hanya melalui HTTPS langsung ke provider yang dipilih user. User dapat menghapusnya. Jelaskan penggunaan konten oleh free tier sebelum pengiriman.
 5. Server Node.js + TypeScript memakai Web Fetch API untuk handler. Bootstrap mendukung Node lokal. Cloudflare Workers Free menjadi target adapter deploy, setelah pengujian staging. Supabase, Cloudflare, Google AI Studio, dan Groq dipakai dengan kuota gratis dan tanpa aktivasi billing atau kartu kredit.
 
 ### Analyzer
 
-Input memiliki `title` dan `course` 1?120 karakter setelah trim, `description` 0?4000 karakter, serta `deadlineAt` RFC 3339 UTC. Batas body 32 KiB. Deadline lampau boleh dianalisis.
+Input memiliki `title` dan `course` 1–120 karakter setelah trim, `description` 0–4000 karakter, serta `deadlineAt` RFC 3339 UTC. Batas body 32 KiB. Deadline lampau boleh dianalisis.
 
 ```json
 {
@@ -51,7 +51,7 @@ Input memiliki `title` dan `course` 1?120 karakter setelah trim, `description` 0
 }
 ```
 
-Gemini API Free melalui Google AI Studio menjadi primary. Groq Free menjadi fallback bila dikonfigurasi. Model diatur melalui env sesuai ketersediaan free tier. Gunakan structured output, validasi ulang hasil, kendalikan timeout, dan tampilkan opsi offline jika AI gagal. Batasi data ke input tugas saja. Jangan log isi tugas, bearer, atau kunci. Tugas hanya dikirim saat user meminta analisis AI. [Gemini structured output](https://ai.google.dev/gemini-api/docs/structured-output) ? [Groq structured outputs](https://console.groq.com/docs/structured-outputs)
+Gemini API Free melalui Google AI Studio menjadi primary. Groq Free menjadi fallback bila dikonfigurasi. Model diatur melalui env sesuai ketersediaan free tier. Gunakan structured output, validasi ulang hasil, kendalikan timeout, dan tampilkan opsi offline jika AI gagal. Batasi data ke input tugas saja. Jangan log isi tugas, bearer, atau kunci. Tugas hanya dikirim saat user meminta analisis AI. [Gemini structured output](https://ai.google.dev/gemini-api/docs/structured-output) · [Groq structured outputs](https://console.groq.com/docs/structured-outputs)
 
 ```json
 {
