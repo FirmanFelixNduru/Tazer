@@ -7,7 +7,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -15,13 +14,16 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tazer.taskorganizer.data.CalendarEvent
@@ -36,14 +38,22 @@ import java.time.format.DateTimeFormatter
 
 private val monthLabel = DateTimeFormatter.ofPattern("MMMM yyyy", Indonesian)
 private val dayLabels = listOf("Sen", "Sel", "Rab", "Kam", "Jum", "Sab", "Min")
+private val calendarHeaderPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
 
 @Composable
 internal fun MonthPicker(month: YearMonth, selectMonth: (YearMonth) -> Unit) {
+    MonthPicker(month, Modifier, ButtonDefaults.ContentPadding, selectMonth)
+}
+
+@Composable
+private fun MonthPicker(month: YearMonth, modifier: Modifier, contentPadding: PaddingValues, selectMonth: (YearMonth) -> Unit) {
     var pickerOpen by rememberSaveable { mutableStateOf(false) }
-    OutlinedButton(onClick = { pickerOpen = true }) {
-        Text(monthLabel.format(month), style = MaterialTheme.typography.titleMedium)
-        Spacer(Modifier.width(6.dp))
-        TazerIcon(TazerGlyph.Down)
+    FilledTonalButton(
+        onClick = { pickerOpen = true },
+        modifier = modifier.testTag("calendar-month-picker"),
+        contentPadding = contentPadding,
+    ) {
+        Text(monthLabel.format(month), textAlign = TextAlign.Center)
     }
     if (pickerOpen) {
         var year by rememberSaveable(month) { mutableIntStateOf(month.year) }
@@ -123,9 +133,19 @@ internal fun CalendarScreen(workspace: Workspace, state: TazerState, zone: ZoneI
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
     ) {
         item {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.weight(1f)) { MonthPicker(month) { selected = it.atDay(1).toEpochDay() } }
-                OutlinedButton(onClick = { selected = today.toEpochDay() }) { Text("Hari Ini") }
+            Row(
+                Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                MonthPicker(month, Modifier.weight(1f).fillMaxHeight(), calendarHeaderPadding) {
+                    selected = it.atDay(1).toEpochDay()
+                }
+                FilledTonalButton(
+                    onClick = { selected = today.toEpochDay() },
+                    modifier = Modifier.weight(1f).fillMaxHeight().testTag("calendar-today"),
+                    contentPadding = calendarHeaderPadding,
+                ) { Text("Hari Ini", textAlign = TextAlign.Center) }
                 IconButton(onClick = { selected = month.minusMonths(1).atDay(1).toEpochDay() }) {
                     TazerIcon(TazerGlyph.Previous, "Bulan sebelumnya")
                 }
@@ -133,13 +153,13 @@ internal fun CalendarScreen(workspace: Workspace, state: TazerState, zone: ZoneI
                     TazerIcon(TazerGlyph.Next, "Bulan berikutnya")
                 }
             }
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             Row(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
                 dayLabels.forEach { label ->
-                    Text(label, Modifier.weight(1f), textAlign = TextAlign.Center, style = MaterialTheme.typography.labelSmall,
+                    Text(label, Modifier.weight(1f), textAlign = TextAlign.Center, style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline)
         }
         items(weeks, key = LocalDate::toEpochDay) { monday ->
             CalendarWeek(monday, month, today, day, agenda, workspace.events, { selected = it.toEpochDay() }, openEvent)
@@ -198,71 +218,104 @@ private fun CalendarWeek(
             }
         rows
     }
-    Row(Modifier.fillMaxWidth()) {
-        for (offset in 0L..6L) {
-            val date = monday.plusDays(offset)
-            val active = date == selected
-            val current = date == today
-            val entries = agenda[date].orEmpty().filter { it.event == null || it.event.startEpochDay == it.event.endEpochDay }
-            Column(
-                Modifier.weight(1f).heightIn(min = 48.dp).clip(RoundedCornerShape(12.dp))
-                    .selectable(selected = active, role = Role.Button, onClick = { select(date) })
-                    .semantics { contentDescription = DayFormat.format(date) + if (current) ", hari ini" else "" },
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Surface(
-                    shape = CircleShape,
-                    border = if (active || current) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                    color = when {
-                        active -> MaterialTheme.colorScheme.primary
-                        current -> MaterialTheme.colorScheme.primaryContainer
-                        else -> MaterialTheme.colorScheme.surface
-                    },
-                    contentColor = when {
-                        active -> MaterialTheme.colorScheme.onPrimary
-                        current -> MaterialTheme.colorScheme.onPrimaryContainer
-                        YearMonth.from(date) == month -> MaterialTheme.colorScheme.onSurface
-                        else -> MaterialTheme.colorScheme.onSurfaceVariant
-                    },
+    val colors = MaterialTheme.colorScheme
+    Column(
+        Modifier.fillMaxWidth().drawBehind {
+            val stroke = 1.dp.toPx()
+            val inset = (stroke / 2).coerceAtMost(size.width / 2)
+            for (column in 0..7) {
+                val x = (size.width * column / 7).coerceIn(inset, size.width - inset)
+                drawLine(colors.outline, Offset(x, 0f), Offset(x, size.height), stroke)
+            }
+            val bottom = size.height - stroke / 2
+            drawLine(colors.outline, Offset(0f, bottom), Offset(size.width, bottom), stroke)
+        },
+    ) {
+        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
+            for (offset in 0L..6L) {
+                val date = monday.plusDays(offset)
+                val active = date == selected
+                val current = date == today
+                val entries = agenda[date].orEmpty().filter { it.event == null || it.event.startEpochDay == it.event.endEpochDay }
+                Column(
+                    Modifier.weight(1f).fillMaxHeight().heightIn(min = 64.dp)
+                        .testTag("calendar-date-cell")
+                        .selectable(selected = active, role = Role.Button, onClick = { select(date) })
+                        .semantics { contentDescription = DayFormat.format(date) + if (current) ", hari ini" else "" }
+                        .padding(horizontal = 3.dp, vertical = 4.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
-                    Box(Modifier.size(30.dp), contentAlignment = Alignment.Center) {
-                        Text(date.dayOfMonth.toString(), style = MaterialTheme.typography.labelLarge)
+                    Surface(
+                        shape = RoundedCornerShape(5.dp),
+                        border = if (current && !active) BorderStroke(1.dp, colors.primary) else null,
+                        color = when {
+                            active -> colors.primary
+                            current -> colors.primaryContainer
+                            else -> Color.Transparent
+                        },
+                        contentColor = when {
+                            active -> colors.onPrimary
+                            current -> colors.onPrimaryContainer
+                            YearMonth.from(date) == month -> colors.onSurface
+                            else -> colors.onSurfaceVariant
+                        },
+                    ) {
+                        Box(
+                            Modifier.sizeIn(minWidth = 26.dp, minHeight = 26.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                date.dayOfMonth.toString(),
+                                style = MaterialTheme.typography.titleSmall,
+                                textDecoration = if (current) TextDecoration.Underline else null,
+                                maxLines = 1,
+                            )
+                        }
                     }
-                }
-                if (entries.isNotEmpty()) {
-                    val first = entries.first()
-                    AgendaPill(if (entries.size == 1) first.title else "${entries.size} agenda", first.kind,
-                        Modifier.fillMaxWidth().padding(horizontal = 2.dp), compact = true)
-                    if (entries.size == 1 && first.time != "Seharian") {
-                        Text(first.time, style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                    if (entries.isNotEmpty()) {
+                        val first = entries.first()
+                        AgendaPill(
+                            if (entries.size == 1) first.title else "${entries.size} agenda",
+                            first.kind,
+                            Modifier.fillMaxWidth(),
+                            compact = true,
+                        )
+                        if (entries.size == 1 && first.time != "Seharian") {
+                            Text(
+                                first.time,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = colors.onSurfaceVariant,
+                                maxLines = 1,
+                            )
+                        }
                     }
                 }
             }
         }
-    }
-    lanes.forEach { lane ->
-        Row(Modifier.fillMaxWidth().padding(bottom = 3.dp)) {
-            var cursor = base
-            lane.forEach { event ->
-                val start = maxOf(base, event.startEpochDay)
-                val end = minOf(base + 6, event.endEpochDay)
-                if (start > cursor) Spacer(Modifier.weight((start - cursor).toFloat()))
-                Surface(
-                    onClick = { edit(event) },
-                    modifier = Modifier.weight((end - start + 1).toFloat()).padding(horizontal = 1.dp).testTag("calendar-event-span"),
-                    color = MaterialTheme.colorScheme.secondaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                    shape = RoundedCornerShape(7.dp),
-                ) {
-                    Text(event.title, Modifier.padding(horizontal = 5.dp, vertical = 3.dp),
-                        style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        lanes.forEach { lane ->
+            Row(Modifier.fillMaxWidth().padding(bottom = 3.dp)) {
+                var cursor = base
+                lane.forEach { event ->
+                    val start = maxOf(base, event.startEpochDay)
+                    val end = minOf(base + 6, event.endEpochDay)
+                    if (start > cursor) Spacer(Modifier.weight((start - cursor).toFloat()))
+                    Surface(
+                        onClick = { edit(event) },
+                        modifier = Modifier.weight((end - start + 1).toFloat()).padding(horizontal = 2.dp).testTag("calendar-event-span"),
+                        color = colors.secondaryContainer,
+                        contentColor = colors.onSecondaryContainer,
+                        shape = RoundedCornerShape(7.dp),
+                    ) {
+                        Text(event.title, Modifier.padding(horizontal = 5.dp, vertical = 4.dp),
+                            style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    cursor = end + 1
                 }
-                cursor = end + 1
+                if (cursor < base + 7) Spacer(Modifier.weight((base + 7 - cursor).toFloat()))
             }
-            if (cursor < base + 7) Spacer(Modifier.weight((base + 7 - cursor).toFloat()))
         }
     }
-    HorizontalDivider(Modifier.padding(bottom = 3.dp), color = MaterialTheme.colorScheme.outlineVariant)
 }
 
 @Composable
@@ -277,8 +330,8 @@ private fun AgendaPill(title: String, kind: String, modifier: Modifier = Modifie
         Text(
             title,
             Modifier.padding(horizontal = if (compact) 3.dp else 8.dp, vertical = if (compact) 1.dp else 3.dp),
-            style = if (compact) MaterialTheme.typography.labelSmall else MaterialTheme.typography.titleSmall,
-            maxLines = if (compact) 1 else 2,
+            style = if (compact) MaterialTheme.typography.labelMedium else MaterialTheme.typography.titleSmall,
+            maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
     }

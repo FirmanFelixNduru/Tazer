@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -16,8 +17,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Surface
@@ -33,6 +36,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -145,14 +149,17 @@ internal fun TasksScreen(
                         Text("Kurang " + it.missingMinutes + " mnt dalam rencana", color = MaterialTheme.colorScheme.error)
                     }
                 }
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 2.dp, bottom = 6.dp)) {
                     if (archived) {
                         OutlinedButton(onClick = { reopenId = task.id }, enabled = !state.busy) { Text("Buka kembali") }
                     } else {
-                        OutlinedButton(onClick = { onEdit(task) }, enabled = !state.busy) { Text("Edit") }
-                        OutlinedButton(onClick = { model.finishTask(task) }, enabled = !state.busy) { Text("Tandai selesai") }
+                        TaskAction(TazerGlyph.Edit, "Edit tugas ${task.title}", MaterialTheme.colorScheme.onSurfaceVariant,
+                            !state.busy) { onEdit(task) }
+                        val success = if (LocalTazerDark.current) Color(0xFF84D39A) else Color(0xFF146634)
+                        TaskAction(TazerGlyph.Check, "Tandai selesai ${task.title}", success, !state.busy) { model.finishTask(task) }
                     }
-                    OutlinedButton(onClick = { deleteId = task.id }, enabled = !state.busy) { Text("Hapus") }
+                    TaskAction(TazerGlyph.Delete, "Hapus tugas ${task.title}", MaterialTheme.colorScheme.error,
+                        !state.busy) { deleteId = task.id }
                 }
             }
             }
@@ -185,6 +192,16 @@ internal fun TasksScreen(
             dismissButton = { OutlinedButton(onClick = { reopenId = null }) { Text("Batal") } },
         )
     }
+}
+
+@Composable
+private fun TaskAction(glyph: TazerGlyph, label: String, tint: Color, enabled: Boolean, onClick: () -> Unit) {
+    OutlinedIconButton(
+        modifier = Modifier.size(48.dp),
+        onClick = onClick,
+        enabled = enabled,
+        colors = IconButtonDefaults.outlinedIconButtonColors(contentColor = tint),
+    ) { TazerIcon(glyph, label) }
 }
 
 @Composable

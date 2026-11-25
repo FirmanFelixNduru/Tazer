@@ -276,7 +276,7 @@ private fun FloatingTimerDeck(session: WorkSession, title: String, runtime: Focu
     }
 }
 
-internal enum class TazerGlyph { Tasks, Timeline, Calendar, Settings, Timer, Previous, Next, Down, Edit, Add }
+internal enum class TazerGlyph { Tasks, Timeline, Calendar, Settings, Timer, Previous, Next, Down, Edit, Delete, Check, Add }
 
 @Composable
 internal fun TazerIcon(glyph: TazerGlyph, description: String? = null) {
@@ -325,6 +325,16 @@ internal fun TazerIcon(glyph: TazerGlyph, description: String? = null) {
                 line(.22f, .76f, .33f, .82f)
                 line(.66f, .32f, .78f, .38f)
             }
+            TazerGlyph.Delete -> {
+                line(.20f, .30f, .80f, .30f)
+                line(.39f, .19f, .61f, .19f)
+                line(.28f, .30f, .32f, .81f)
+                line(.32f, .81f, .68f, .81f)
+                line(.68f, .81f, .72f, .30f)
+                line(.43f, .43f, .44f, .68f)
+                line(.57f, .43f, .56f, .68f)
+            }
+            TazerGlyph.Check -> { line(.20f, .51f, .42f, .72f); line(.42f, .72f, .80f, .29f) }
             TazerGlyph.Add -> { line(.22f, .5f, .78f, .5f); line(.5f, .22f, .5f, .78f) }
         }
     }

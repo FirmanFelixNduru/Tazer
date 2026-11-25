@@ -1,59 +1,69 @@
 package com.tazer.taskorganizer.ui
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.Surface
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.style.TextOverflow
-import java.time.YearMonth
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.snapping.SnapPosition
+import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Text
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.snapshotFlow
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tazer.taskorganizer.data.FixedSchedule
 import com.tazer.taskorganizer.data.FixedScheduleKind
@@ -64,10 +74,15 @@ import com.tazer.taskorganizer.domain.ScheduleRule
 import com.tazer.taskorganizer.domain.Scheduler
 import java.time.DayOfWeek
 import java.time.LocalDate
+import java.time.YearMonth
 import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
 import java.time.format.TextStyle
-import java.time.temporal.ChronoUnit
-import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlin.math.abs
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.launch
 
 private data class TimelineRow(
     val id: String, val title: String, val kind: String, val start: Long, val end: Long,
@@ -80,43 +95,9 @@ internal fun TimelineScreen(
     workspace: Workspace, state: TazerState, zone: ZoneId, day: LocalDate, selectDay: (LocalDate) -> Unit,
     openFocus: (WorkSession) -> Unit, defer: () -> Unit, permissions: () -> Unit,
 ) {
-    // Each page is one ISO week; swiping left advances a week, right goes back.
-    // The weekday is retained across week boundaries, including month/year changes.
-    val originWeekEpoch = rememberSaveable { day.minusDays((day.dayOfWeek.value - 1).toLong()).toEpochDay() }
-    val originWeek = LocalDate.ofEpochDay(originWeekEpoch)
-    val centerPage = 100_000
-    val pageCount = 200_001
-    val targetPage = (centerPage.toLong() + ChronoUnit.WEEKS.between(originWeek, day.minusDays((day.dayOfWeek.value - 1).toLong())))
-        .coerceIn(0, (pageCount - 1).toLong()).toInt()
-    val pager = rememberPagerState(initialPage = targetPage, pageCount = { pageCount })
-    val latestDay by rememberUpdatedState(day)
-    val latestSelectDay by rememberUpdatedState(selectDay)
-    LaunchedEffect(targetPage) {
-        if (pager.settledPage != targetPage) pager.animateScrollToPage(targetPage)
-    }
-    LaunchedEffect(pager, originWeek) {
-        snapshotFlow { pager.settledPage }.distinctUntilChanged().collect { page ->
-            val selectedWeek = latestDay.minusDays((latestDay.dayOfWeek.value - 1).toLong())
-            val pageWeek = originWeek.plusWeeks((page - centerPage).toLong())
-            if (pageWeek != selectedWeek) latestSelectDay(pageWeek.plusDays((latestDay.dayOfWeek.value - 1).toLong()))
-        }
-    }
-    HorizontalPager(state = pager) { page ->
-        val pageDay = originWeek.plusWeeks((page - centerPage).toLong()).plusDays((day.dayOfWeek.value - 1).toLong())
-        TimelineWeek(workspace, state, zone, pageDay, selectDay, openFocus, defer, permissions)
-    }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun TimelineWeek(
-    workspace: Workspace, state: TazerState, zone: ZoneId, day: LocalDate, selectDay: (LocalDate) -> Unit,
-    openFocus: (WorkSession) -> Unit, defer: () -> Unit, permissions: () -> Unit,
-) {
     val today = localDate(state.now, zone)
     val start = day.atStartOfDay(zone).toInstant().toEpochMilli()
     val end = day.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
-    val weekStart = day.minusDays((day.dayOfWeek.value - 1).toLong())
     val rows = remember(workspace, day, zone, today) {
         val fixedById = workspace.fixed.associateBy { it.id }
         val tasksById = workspace.tasks.associateBy { it.id }
@@ -137,58 +118,132 @@ private fun TimelineWeek(
         }.toList()
         (fixedRows + workRows).sortedWith(compareBy<TimelineRow> { it.start }.thenBy { it.id })
     }
-    LazyColumn(contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp)) {
-        item {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                MonthPicker(YearMonth.from(day)) { month -> selectDay(month.atDay(day.dayOfMonth.coerceAtMost(month.lengthOfMonth()))) }
-                FilledTonalButton(onClick = { selectDay(today) }) { Text("Hari Ini") }
+    Column(Modifier.padding(top = 12.dp)) {
+        DateSpinner(day, today, selectDay, Modifier.padding(horizontal = 20.dp))
+        LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 12.dp)) {
+            item {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    OutlinedButton(onClick = defer, enabled = !state.busy) { Text("Saya lagi sibuk") }
+                    OutlinedButton(onClick = permissions) { Text("Izin pengingat") }
+                }
+                if (state.risks.isNotEmpty()) Text(
+                    "Risiko lewat deadline pada ${state.risks.size} tugas. Lihat tab Belum Selesai.",
+                    color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(vertical = 8.dp),
+                )
+                Row(Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 12.dp)) {
+                    Text("Jam", Modifier.width(68.dp), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Jadwal", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                if (day > today.plusDays(6)) Text("Sesi fokus direncanakan hingga tujuh hari ke depan.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Row(
-                Modifier.fillMaxWidth().padding(vertical = 12.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
+            if (rows.isEmpty()) item {
+                Text("Tidak ada blok jadwal pada tanggal ini.", modifier = Modifier.padding(vertical = 24.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            items(rows, key = { it.id }) { row ->
+                TimelineEntry(row, start, end, state.now, zone, day == today, openFocus)
+            }
+        }
+    }
+}
+
+private val SpinnerDateFormat = DateTimeFormatter.ofLocalizedDate(FormatStyle.FULL).withLocale(Indonesian)
+
+@Composable
+private fun DateSpinner(day: LocalDate, today: LocalDate, selectDay: (LocalDate) -> Unit, modifier: Modifier = Modifier) {
+    val startEpoch = rememberSaveable { day.toEpochDay() - 700_000 }
+    val dayCount = 1_400_001
+    val selectedIndex = (day.toEpochDay() - startEpoch).coerceIn(0, dayCount - 1L).toInt()
+    val dates = rememberLazyListState(initialFirstVisibleItemIndex = selectedIndex)
+    val latestSelectDay by rememberUpdatedState(selectDay)
+    var navigationRequest by remember { mutableIntStateOf(0) }
+    val request = navigationRequest
+
+    fun navigateTo(date: LocalDate) {
+        navigationRequest++
+        selectDay(date)
+    }
+
+    LaunchedEffect(dates, selectedIndex, request) {
+        val layout = dates.layoutInfo
+        val viewportCenter = (layout.viewportStartOffset + layout.viewportEndOffset) / 2f
+        val target = layout.visibleItemsInfo.firstOrNull { it.index == selectedIndex }
+        coroutineScope {
+            // A new drag can cancel the centering animation while the observer stays active.
+            launch {
+                when {
+                    target == null -> dates.scrollToItem(selectedIndex)
+                    abs(target.offset + target.size / 2f - viewportCenter) > 1f -> dates.animateScrollToItem(selectedIndex)
+                }
+            }
+        }
+        snapshotFlow {
+            if (navigationRequest != request || dates.isScrollInProgress) null
+            else {
+                val settled = dates.layoutInfo
+                val center = (settled.viewportStartOffset + settled.viewportEndOffset) / 2f
+                settled.visibleItemsInfo.minByOrNull { abs(it.offset + it.size / 2f - center) }?.index
+            }
+        }.filterNotNull().collect { index ->
+            if (index != selectedIndex) latestSelectDay(LocalDate.ofEpochDay(startEpoch + index))
+        }
+    }
+
+    val colors = MaterialTheme.colorScheme
+    Column(modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+            MonthPicker(YearMonth.from(day)) { month -> navigateTo(month.atDay(day.dayOfMonth.coerceAtMost(month.lengthOfMonth()))) }
+            FilledTonalButton(onClick = { navigateTo(today) }) { Text("Hari Ini") }
+        }
+        BoxWithConstraints(Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
+            val cellWidth = 56.dp.coerceAtMost(maxWidth)
+            LazyRow(
+                modifier = Modifier.fillMaxWidth().testTag("schedule-date-spinner").selectableGroup()
+                    .semantics { contentDescription = "Pilih tanggal" }
+                    .drawWithCache {
+                        val fade = 24.dp.toPx().coerceAtMost(size.width / 6f)
+                        val surface = colors.surface
+                        val clearSurface = surface.copy(alpha = 0f)
+                        val left = Brush.horizontalGradient(listOf(surface, clearSurface), endX = fade)
+                        val right = Brush.horizontalGradient(listOf(clearSurface, surface), startX = size.width - fade, endX = size.width)
+                        onDrawWithContent {
+                            drawContent()
+                            if (fade > 0f) {
+                                val edgeSize = Size(fade, size.height)
+                                drawRect(left, size = edgeSize)
+                                drawRect(right, topLeft = Offset(size.width - fade, 0f), size = edgeSize)
+                            }
+                        }
+                    },
+                state = dates,
+                contentPadding = PaddingValues(horizontal = (maxWidth - cellWidth) / 2),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                flingBehavior = rememberSnapFlingBehavior(dates, SnapPosition.Center),
             ) {
-                (0L..6L).forEach { offset ->
-                    val date = weekStart.plusDays(offset)
+                items(dayCount, key = { startEpoch + it }) { index ->
+                    val date = LocalDate.ofEpochDay(startEpoch + index)
                     val isSelected = date == day
                     Surface(
-                        modifier = Modifier.weight(1f).padding(horizontal = 2.dp)
-                            .selectable(selected = isSelected, role = Role.Button, onClick = { selectDay(date) })
-                            .semantics { contentDescription = DayFormat.format(date) },
+                        modifier = Modifier.width(cellWidth).heightIn(min = 48.dp).testTag("schedule-date-$date")
+                            .selectable(selected = isSelected, role = Role.Button, onClick = { navigateTo(date) })
+                            .semantics {
+                                contentDescription = SpinnerDateFormat.format(date) + if (date == today) ", hari ini" else ""
+                            },
                         shape = RoundedCornerShape(14.dp),
-                        border = if (isSelected) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                        color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
-                        contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                        border = if (isSelected) null else BorderStroke(1.dp, colors.outlineVariant),
+                        color = if (isSelected) colors.primary else Color.Transparent,
+                        contentColor = if (isSelected) colors.onPrimary else colors.onSurface,
                     ) {
-                        Column(Modifier.padding(vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Column(
+                            Modifier.clearAndSetSemantics { }.padding(vertical = 10.dp),
+                            verticalArrangement = Arrangement.Center,
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
                             Text(date.dayOfWeek.getDisplayName(TextStyle.SHORT, Indonesian), style = MaterialTheme.typography.labelMedium, maxLines = 1)
                             Text(date.dayOfMonth.toString(), style = MaterialTheme.typography.titleMedium)
                         }
                     }
                 }
             }
-            FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                OutlinedButton(onClick = { selectDay(day.minusWeeks(1)) }) { Text("Pekan sebelumnya") }
-                OutlinedButton(onClick = { selectDay(day.plusWeeks(1)) }) { Text("Pekan berikutnya") }
-            }
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                OutlinedButton(onClick = defer, enabled = !state.busy) { Text("Saya lagi sibuk") }
-                OutlinedButton(onClick = permissions) { Text("Izin pengingat") }
-            }
-            if (state.risks.isNotEmpty()) Text(
-                "Risiko lewat deadline pada ${state.risks.size} tugas. Lihat tab Belum Selesai.",
-                color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(vertical = 8.dp),
-            )
-            if (day > today.plusDays(6)) Text("Sesi fokus direncanakan hingga tujuh hari ke depan.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 12.dp)) {
-                Text("Jam", Modifier.width(68.dp), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("Jadwal", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-        if (rows.isEmpty()) item {
-            Text("Tidak ada blok jadwal pada tanggal ini.", modifier = Modifier.padding(vertical = 24.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        items(rows, key = { it.id }) { row ->
-            TimelineEntry(row, start, end, state.now, zone, day == today, openFocus)
         }
     }
 }

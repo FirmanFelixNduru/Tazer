@@ -16,6 +16,7 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.temporal.TemporalAdjusters
 import java.time.DayOfWeek
+import java.time.format.DateTimeFormatter
 import java.util.UUID
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -131,6 +132,118 @@ class ReleaseUiTest {
         }
     }
 
+    @Test
+    fun scheduleSwipeOnlySelectsDatesOnTheStrip() {
+        try {
+            launch()
+            waitFor("Schedule unavailable") { clickText("Jadwal") }
+            waitFor("Date strip and timeline did not load") {
+                scheduleDates().size >= 3 && findText("Jam") != null && centeredScheduleDate() != null
+            }
+            assertTrue(findText("Pekan sebelumnya") == null && findText("Pekan berikutnya") == null)
+            val initial = requireNotNull(centeredScheduleDate())
+            val dateBounds = scheduleDates().map(::bounds)
+            val strip = Rect(dateBounds.first()).apply { dateBounds.drop(1).forEach { union(it) } }
+            val inset = strip.width() * .12f
+            val timelineHeader = bounds(requireNotNull(findText("Jam")))
+            val outside = timelineHeader.bottom.toFloat() + context.resources.displayMetrics.density * 40
+            swipe(strip.right - inset, outside, strip.left + inset, outside)
+            automation.waitForIdle(350, 5_000)
+            var afterTimelineSwipe: String? = null
+            waitFor("Date strip did not return after the timeline swipe") {
+                afterTimelineSwipe = centeredScheduleDate()
+                afterTimelineSwipe != null
+            }
+            assertEquals(initial, afterTimelineSwipe)
+            val y = strip.exactCenterY()
+            swipe(strip.right - inset, y, strip.left + inset, y)
+            automation.waitForIdle(350, 5_000)
+            waitFor("Date strip did not settle on a new day") {
+                centeredScheduleDate()?.let { it != initial } == true && findText("Jam") != null
+            }
+            val updatedHeader = bounds(requireNotNull(findText("Jam")))
+            assertEquals(timelineHeader.left, updatedHeader.left)
+            assertEquals(timelineHeader.right, updatedHeader.right)
+            assertTrue(clickText("Hari Ini"))
+            waitFor("Hari Ini did not restore the initial date") { centeredScheduleDate() == initial }
+        } finally { finish() }
+    }
+
+    @Test
+    fun calendarHeaderButtonsAlignAndDateCellsShareGridEdges() = runBlocking {
+        try {
+            launch()
+            val profile = requireNotNull(TaskRepository(TazerDatabase.getInstance(context)).observeProfile(UID).first())
+            val date = LocalDate.now(ZoneId.of(profile.zoneId))
+            val month = DateTimeFormatter.ofPattern("MMMM yyyy", Indonesian).format(date)
+            waitFor("Calendar unavailable") { clickText("Kalender") }
+            waitFor("Calendar header did not load") { findText(month) != null && findText("Hari Ini") != null }
+            val monthButton = bounds(requireNotNull(actionFor(month)))
+            val todayButton = bounds(requireNotNull(actionFor("Hari Ini")))
+            assertEquals(todayButton.height(), monthButton.height())
+            assertEquals(todayButton.centerY(), monthButton.centerY())
+            val cells = nodes { it.viewIdResourceName == "calendar-date-cell" }.map(::bounds)
+            val row = cells.groupBy { it.top }.values.first { it.size == 7 }.sortedBy { it.left }
+            assertTrue(row.all { it.height() == row.first().height() })
+            assertTrue(row.zipWithNext().all { (left, right) -> kotlin.math.abs(left.right - right.left) <= 2 })
+        } finally { finish() }
+    }
+
+    @Test
+    fun taskCardIconsAreAccessibleAndKeepTheirActions() = runBlocking {
+        val tasks = TaskRepository(TazerDatabase.getInstance(context))
+        val title = "Aksi tugas QA " + UUID.randomUUID().toString().take(8)
+        var taskId: String? = null
+        try {
+            launch()
+            val now = System.currentTimeMillis()
+            taskId = tasks.createTask(UID, title, "QA", "", now + 172_800_000L, 3, 30, now).id
+            val labels = listOf("Edit tugas $title", "Tandai selesai $title", "Hapus tugas $title")
+            waitFor("Task icon labels missing") { labels.all { actionFor(it) != null } }
+            val minimum = 48 * context.resources.displayMetrics.density
+            assertTrue(labels.map { bounds(requireNotNull(actionFor(it))) }.all {
+                it.width() >= minimum - 1 && it.height() >= minimum - 1
+            })
+            waitFor("Edit icon did not accept a tap") { clickText(labels[0]) }
+            waitFor("Edit task did not open") { findText("Edit tugas") != null }
+            waitFor("Edit back button did not accept a tap") { clickText("Kembali") }
+            waitFor("Complete action not available") { clickText(labels[1]) }
+            waitFor("Archive tab did not open") { clickText("Selesai") }
+            waitFor("Completed task or archive delete action missing") {
+                findText("Buka kembali") != null && clickText(labels[2])
+            }
+            waitFor("Archive delete confirmation did not open") { findText("Hapus tugas?") != null }
+            waitFor("Archive delete confirmation did not accept a tap") { clickText("Hapus") }
+            waitFor("Task stayed in archive after delete") { actionFor(labels[2]) == null }
+        } finally {
+            taskId?.let { tasks.deleteTask(UID, it) }
+            finish()
+        }
+    }
+
+    private fun scheduleDates() = nodes {
+        it.contentDescription?.let(DateDescription::containsMatchIn) == true
+    }
+
+    private fun centeredScheduleDate(): String? {
+        val screenCenter = context.resources.displayMetrics.widthPixels / 2
+        return scheduleDates().minByOrNull { kotlin.math.abs(bounds(it).centerX() - screenCenter) }
+            ?.contentDescription?.toString()
+    }
+
+    private fun actionFor(text: String): AccessibilityNodeInfo? {
+        var node = findText(text)
+        while (node != null && !node.isClickable) node = node.parent
+        return node
+    }
+
+    private fun swipe(x1: Float, y1: Float, x2: Float, y2: Float) {
+        val coordinates = listOf(x1, y1, x2, y2).joinToString(" ") { it.toInt().toString() }
+        android.os.ParcelFileDescriptor.AutoCloseInputStream(
+            automation.executeShellCommand("input swipe $coordinates 360"),
+        ).use { it.readBytes() }
+    }
+
     private fun waitFor(message: String, condition: () -> Boolean) {
         val deadline = SystemClock.elapsedRealtime() + 12_000L
         while (SystemClock.elapsedRealtime() < deadline) {
@@ -198,5 +311,8 @@ class ReleaseUiTest {
         return false
     }
 
-    private companion object { const val UID = "tazer-demo-local" }
+    private companion object {
+        const val UID = "tazer-demo-local"
+        val DateDescription = Regex("^\\p{L}+, \\d")
+    }
 }
