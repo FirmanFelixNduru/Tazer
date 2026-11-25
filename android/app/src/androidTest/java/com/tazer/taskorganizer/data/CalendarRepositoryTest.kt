@@ -47,7 +47,7 @@ class CalendarRepositoryTest {
                         25, 0L, 1_500_000L, 1_500_000L, null, null, null, null, 4L),
                     dao.findFocusSession("alice", "session-v1"),
                 )
-                assertEquals(2, database.openHelper.writableDatabase.version)
+                assertEquals(3, database.openHelper.writableDatabase.version)
                 assertTrue(calendar.observeEvents("alice").first().isEmpty())
 
                 assertTrue(calendar.saveEvent("alice", null, " Libur ", start, end, null, " Catatan "))

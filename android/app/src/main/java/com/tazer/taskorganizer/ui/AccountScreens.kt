@@ -22,7 +22,6 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -68,7 +67,7 @@ internal fun LoginScreen(model: TazerViewModel, state: TazerState, launch: (Inte
                 SecretField(password, { password = it }, "Kata sandi baru", !state.busy, Modifier.fillMaxWidth())
                 Button(onClick = { model.updatePassword(password) }, enabled = !state.busy && password.length >= 6,
                     modifier = Modifier.fillMaxWidth()) { Text("Simpan kata sandi") }
-                TextButton(onClick = model::signOut, enabled = !state.busy) { Text("Batal") }
+                OutlinedButton(onClick = model::signOut, enabled = !state.busy) { Text("Batal") }
                 return@Column
             }
             if (model.authAvailable) {
@@ -82,8 +81,8 @@ internal fun LoginScreen(model: TazerViewModel, state: TazerState, launch: (Inte
                     Text("Masuk dengan Google")
                 }
                 FlowRow {
-                    TextButton(onClick = { model.signUp(email, password) }, enabled = canSubmit) { Text("Daftar") }
-                    TextButton(onClick = { model.resetPassword(email) }, enabled = !state.busy && email.isNotBlank()) {
+                    OutlinedButton(onClick = { model.signUp(email, password) }, enabled = canSubmit) { Text("Daftar") }
+                    OutlinedButton(onClick = { model.resetPassword(email) }, enabled = !state.busy && email.isNotBlank()) {
                         Text("Lupa kata sandi?")
                     }
                 }
@@ -103,7 +102,7 @@ internal fun LoginScreen(model: TazerViewModel, state: TazerState, launch: (Inte
                 Text("Uji backend lokal", style = MaterialTheme.typography.titleSmall)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     SubscriptionTier.entries.forEach { tier ->
-                        TextButton(onClick = { model.signInMock(tier) }, enabled = !state.busy) { Text(tier.name) }
+                        OutlinedButton(onClick = { model.signInMock(tier) }, enabled = !state.busy) { Text(tier.name) }
                     }
                 }
             }
@@ -124,12 +123,12 @@ internal fun AccountSettings(state: TazerState, model: TazerViewModel, modifier:
             else -> Text(subscription.tier.name)
         }
         if (subscription != null) {
-            TextButton(onClick = model::refreshTier, enabled = !state.busy) { Text("Perbarui tier") }
+            OutlinedButton(onClick = model::refreshTier, enabled = !state.busy) { Text("Perbarui tier") }
         }
         if (subscription?.tier == SubscriptionTier.BYOK) {
             ByokForm(state, model)
         }
-        TextButton(onClick = model::signOut, enabled = !state.busy) { Text("Keluar") }
+        OutlinedButton(onClick = model::signOut, enabled = !state.busy) { Text("Keluar") }
     }
 }
 
@@ -172,7 +171,7 @@ private fun ByokForm(state: TazerState, model: TazerViewModel) {
         Button(onClick = {
             model.saveByok(ByokProvider.valueOf(providerName), modelName, key) { key = ""; hasKey = true }
         }, enabled = !state.busy && modelName.isNotBlank() && key.isNotBlank()) { Text("Simpan kunci") }
-        if (hasKey) TextButton(onClick = {
+        if (hasKey) OutlinedButton(onClick = {
             model.deleteByok { key = ""; hasKey = false }
         }, enabled = !state.busy) { Text("Hapus kunci") }
     }

@@ -39,6 +39,28 @@ class FocusTest {
     }
 
     @Test
+    fun pausedWorkIsFrozenAndResumeAddsOnlyTheNewSegment() {
+        val pause = FocusMoment(start, minutes(28) + 321, "boot")
+        val running = FocusClock("boot", minutes(10), minutes(25), minutes(12), minutes(8))
+        assertEquals(-minutes(3) - 321, running.remainingAt(pause))
+        assertEquals(minutes(26) + 321, running.workAt(pause))
+
+        val paused = running.copy(cutoffElapsedMs = null, checkpointMs = running.workAt(pause), paused = true)
+        val resume = pause.copy(elapsedMs = pause.elapsedMs + minutes(10))
+        assertEquals(running.workAt(pause), paused.workAt(resume))
+        assertFalse(paused.breakTaken(resume.copy(elapsedMs = resume.elapsedMs - 1)))
+        assertTrue(paused.breakTaken(resume))
+        assertTrue(paused.breakTaken(resume.copy(bootId = "new", elapsedMs = 500)))
+
+        val resumed = FocusClock("new", 500, 500 + running.remainingAt(pause)!!,
+            paused.workAt(resume), paused.workAt(resume))
+        val later = FocusMoment(start, 750, "new")
+        assertTrue(resumed.cutoffReached(later))
+        assertEquals(-minutes(3) - 571, resumed.remainingAt(later))
+        assertEquals(minutes(26) + 571, resumed.workAt(later))
+    }
+
+    @Test
     fun interruptionDeductsWholeMinutesAndLeavesTaskOpen() {
         assertEquals(30, remainingAfterInterruption(30, minutes(1) - 1))
         assertEquals(18, remainingAfterInterruption(30, minutes(12) + 999))

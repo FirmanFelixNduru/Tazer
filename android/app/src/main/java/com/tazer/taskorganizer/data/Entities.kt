@@ -8,7 +8,7 @@ import androidx.room.PrimaryKey
 enum class TaskStatus { PENDING, IN_PROGRESS, DONE }
 enum class AnalysisSource { OFFLINE, AI }
 enum class FixedScheduleKind { ROUTINE, BREAK }
-enum class WorkSessionState { PENDING, RUNNING, OVERTIME, EXTENDED, DONE, CANCELLED }
+enum class WorkSessionState { PENDING, RUNNING, OVERTIME, EXTENDED, PAUSED, DONE, CANCELLED }
 
 @Entity
 data class UserProfile(
@@ -94,6 +94,11 @@ data class WorkSession(
     val cutoffElapsedMs: Long?,
     val lastObservedWorkMs: Long?,
     val revision: Long,
+    val pausedRemainingMs: Long? = null,
+    val pausedFromState: WorkSessionState? = null,
+    val workBeforeSegmentMs: Long? = null,
+    val continuousWorkBeforeSegmentMs: Long? = null,
+    val lastObservedAt: Long? = null,
 )
 
 /** Start and end are inclusive civil dates. A null start minute represents an all-day event. */

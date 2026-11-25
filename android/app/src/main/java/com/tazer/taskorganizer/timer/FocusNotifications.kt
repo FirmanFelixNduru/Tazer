@@ -5,14 +5,18 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.ContentResolver
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
+import android.media.AudioAttributes
+import android.net.Uri
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.content.edit
 import com.tazer.taskorganizer.MainActivity
+import com.tazer.taskorganizer.R
 import com.tazer.taskorganizer.data.WorkSession
 import com.tazer.taskorganizer.data.WorkSessionState
 import com.tazer.taskorganizer.domain.FocusMoment
@@ -24,6 +28,10 @@ internal class FocusNotifications(
 ) {
     private val manager = context.getSystemService(NotificationManager::class.java)
     private var displayedActive: FocusEvent? = null
+
+    init {
+        ensureChannels()
+    }
 
     fun enabled(): Boolean =
         (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
@@ -59,9 +67,13 @@ internal class FocusNotifications(
     fun activeNotification(session: WorkSession, now: FocusMoment, alert: Boolean): Notification {
         val cutoff = requireNotNull(session.cutoffElapsedMs)
         val overtime = session.state == WorkSessionState.OVERTIME
+        // Keep the decision actions visible if the user blocks the overtime channel.
+        val overtimeChannel = overtime &&
+            manager.getNotificationChannel(OVERTIME)?.importance != NotificationManager.IMPORTANCE_NONE
         // Android's notification chronometer converts wall-clock "when" to a monotonic base.
         val builder = if (overtime) {
-            notification(TIMER, "Waktu fokus habis", "Timer tetap menghitung waktu tambahan")
+            val channel = if (overtimeChannel) OVERTIME else TIMER
+            notification(channel, "Waktu fokus habis", "Timer tetap menghitung waktu tambahan")
         } else {
             notification(TIMER, "Fokus sedang berjalan", "Ketuk untuk membuka timer")
         }
@@ -70,7 +82,7 @@ internal class FocusNotifications(
             .setUsesChronometer(true)
             .setChronometerCountDown(!overtime)
             .setOngoing(true)
-            .setSilent(!alert)
+            .setSilent(!overtimeChannel || !alert)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .setContentIntent(open(FocusEvent(session, FocusEventKind.ACTIVE)))
         if (overtime) {
@@ -124,15 +136,13 @@ internal class FocusNotifications(
         context, 0, event.activityIntent(context, linkToken()), PendingIntent.FLAG_IMMUTABLE,
     )
 
-    private fun notification(channel: String, title: String, body: String): NotificationCompat.Builder {
-        ensureChannels()
-        return NotificationCompat.Builder(context, channel)
+    private fun notification(channel: String, title: String, body: String): NotificationCompat.Builder =
+        NotificationCompat.Builder(context, channel)
             .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setContentTitle(title)
             .setContentText(body)
-    }
 
     private fun canPost(channel: String): Boolean =
         enabled() && manager.getNotificationChannel(channel)?.importance != NotificationManager.IMPORTANCE_NONE
@@ -150,10 +160,30 @@ internal class FocusNotifications(
     }
 
     private fun ensureChannels() {
+        // The resource name stays stable when APK resource IDs change.
+        val bell = Uri.Builder()
+            .scheme(ContentResolver.SCHEME_ANDROID_RESOURCE)
+            .authority(context.packageName)
+            .appendPath("raw")
+            .appendPath(context.resources.getResourceEntryName(R.raw.tazer_ringbell))
+            .build()
+        val attributes = AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+            .build()
         manager.createNotificationChannels(listOf(
-            NotificationChannel(TIMER, "Timer fokus", NotificationManager.IMPORTANCE_DEFAULT),
-            NotificationChannel(REMINDERS, "Pengingat fokus", NotificationManager.IMPORTANCE_DEFAULT),
+            NotificationChannel(TIMER, "Timer fokus", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                setSound(null, null)
+            },
+            NotificationChannel(REMINDERS, "Pengingat fokus", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                setSound(bell, attributes)
+            },
+            NotificationChannel(OVERTIME, "Waktu fokus habis", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                setSound(bell, attributes)
+            },
         ))
+        manager.deleteNotificationChannel("focus_reminders")
+        manager.deleteNotificationChannel("focus_overtime")
     }
 
     companion object {
@@ -161,7 +191,8 @@ internal class FocusNotifications(
         const val REMINDER_ID = 3101
         const val RECOVERY_ID = 3102
         private const val TIMER = "focus_timer"
-        private const val REMINDERS = "focus_reminders"
+        private const val REMINDERS = "focus_reminders_v2"
+        private const val OVERTIME = "focus_overtime_v2"
         private const val OVERTIME_ALERT = "overtime_alert"
     }
 }

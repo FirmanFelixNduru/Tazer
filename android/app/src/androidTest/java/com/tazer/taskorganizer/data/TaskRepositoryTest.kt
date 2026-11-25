@@ -348,7 +348,8 @@ class TaskRepositoryTest {
         val running = repository.startFocus("alice", pending.id, pending.revision, focusMoment("09:10", 60))!!.active!!
         assertEquals(minutes(100), running.cutoffElapsedMs)
         assertEquals(wall("09:40"), running.plannedEndAt)
-        repository.pauseFocus("alice", running.id, running.revision, focusMoment("09:11", 61))
+        val interruptedAt = focusMoment("09:11", 61)
+        repository.deferFocus("alice", interruptedAt.wallMs, interruptedAt)
         val expired = draft(task, "09:30", 25)
         val retry = repository.startFocus("alice", expired.id, expired.revision, focusMoment("09:55", 105))!!
         assertNull(retry.active)
@@ -369,6 +370,159 @@ class TaskRepositoryTest {
             val cutoff = before.copy(wallMs = before.wallMs + 1, elapsedMs = before.elapsedMs + 1)
             assertEquals(WorkSessionState.OVERTIME, repository.checkFocus(uid, active.id, active.revision, cutoff)?.active?.state)
         }
+    }
+
+    @Test
+    fun pauseKeepsTheSlotAndResumePreservesExactCountdownAndWork() = runBlocking {
+        val task = addFocusTask("alice")
+        val other = addFocusTask("alice")
+        val draft = draft(task, "09:00", 25)
+        val alternative = draft(other, "09:00", 25)
+        val running = repository.startFocus("alice", draft.id, draft.revision, focusMoment("09:00", 60))!!.active!!
+        val pause = FocusMoment(wall("09:04") + 567, minutes(64) + 567, "boot")
+        val paused = repository.pauseFocus("alice", running.id, running.revision, pause)!!.active!!
+        assertEquals(WorkSessionState.PAUSED, paused.state)
+        assertEquals(running.revision + 1, paused.revision)
+        assertEquals(minutes(21) - 567, paused.pausedRemainingMs)
+        assertNull(paused.cutoffElapsedMs)
+        assertNull(paused.actualWorkMs)
+        assertEquals(paused, repository.activeFocus("alice"))
+        assertNull(repository.startFocus("alice", alternative.id, alternative.revision, pause))
+        assertNull(repository.checkFocus("alice", running.id, running.revision, pause))
+        assertNull(repository.checkFocus("alice", paused.id, paused.revision, pause))
+        assertNull(repository.pauseFocus("alice", paused.id, paused.revision, pause))
+        assertNull(repository.resumeFocus("bob", paused.id, paused.revision, pause))
+        assertNull(repository.resumeFocus("alice", paused.id, running.revision, pause))
+        assertNull(repository.extendFocus("alice", paused.id, paused.revision, 15, pause))
+        assertFalse(repository.deleteTask("alice", task.id))
+        assertFalse(repository.completeTask("alice", task.id, pause.wallMs))
+
+        val resume = focusMoment("10:00", 120)
+        assertEquals(paused, TaskRepository(database).recoverFocus("alice", resume)!!.active)
+        val resumed = repository.resumeFocus("alice", paused.id, paused.revision, resume)!!.active!!
+        assertEquals(WorkSessionState.RUNNING, resumed.state)
+        assertEquals(paused.revision + 1, resumed.revision)
+        assertEquals(resume.elapsedMs + minutes(21) - 567, resumed.cutoffElapsedMs)
+        assertEquals(running.startedAt, resumed.startedAt)
+        assertNull(resumed.pausedRemainingMs)
+        assertNull(repository.resumeFocus("alice", paused.id, paused.revision, resume))
+        assertNull(repository.finishFocus("alice", paused.id, paused.revision, resume))
+
+        val secondPause = focusMoment("10:02", 122)
+        val again = repository.pauseFocus("alice", resumed.id, resumed.revision, secondPause)!!.active!!
+        assertEquals(minutes(19) - 567, again.pausedRemainingMs)
+        assertEquals(minutes(6) + 567, again.lastObservedWorkMs)
+        val finish = FocusMoment(wall("11:30"), 500L, "new")
+        assertEquals(again, repository.recoverFocus("alice", finish)!!.active)
+        repository.finishFocus("alice", again.id, again.revision, finish)!!
+        val closed = repository.focusSession("alice", again.id)!!
+        assertEquals(minutes(6) + 567, closed.actualWorkMs)
+        assertEquals(secondPause.wallMs, closed.endedAt)
+        assertEquals(finish.wallMs, repository.observeTasks("alice").first().single { it.id == task.id }.completedAt)
+    }
+
+    @Test
+    fun pauseAfterCutoffFreezesOvertimeAndRebootResumeRetainsIt() = runBlocking {
+        val task = addFocusTask("alice")
+        val draft = draft(task, "09:00", 25)
+        val running = repository.startFocus("alice", draft.id, draft.revision, focusMoment("09:00", 60))!!.active!!
+        val pause = FocusMoment(wall("09:27") + 123, minutes(87) + 123, "boot")
+        val paused = repository.pauseFocus("alice", running.id, running.revision, pause)!!.active!!
+        assertEquals(-minutes(2) - 123, paused.pausedRemainingMs)
+        val resume = FocusMoment(wall("10:00"), 500L, "new")
+        val resumed = repository.resumeFocus("alice", paused.id, paused.revision, resume)!!.active!!
+        assertEquals(WorkSessionState.OVERTIME, resumed.state)
+        assertEquals(500L - minutes(2) - 123, resumed.cutoffElapsedMs)
+        assertEquals(minutes(27) + 123, resumed.lastObservedWorkMs)
+
+        val checkpoint = resume.copy(wallMs = resume.wallMs + 601, elapsedMs = 1101L)
+        assertEquals(minutes(27) + 724, TaskRepository(database).recoverFocus("alice", checkpoint)!!.active!!.lastObservedWorkMs)
+        val reboot = FocusMoment(wall("10:30"), 250L, "newer")
+        assertNull(repository.recoverFocus("alice", reboot)!!.active)
+        val closed = repository.focusSession("alice", resumed.id)!!
+        assertEquals(checkpoint.wallMs, closed.endedAt)
+        assertEquals(minutes(27) + 724, closed.actualWorkMs)
+    }
+
+    @Test
+    fun onlyAFullPauseRestoresContinuousExtensionBudget() = runBlocking {
+        for ((uid, shortfallMs) in listOf("alice" to 0L, "bob" to 1L)) {
+            val task = addFocusTask(uid)
+            val draft = draft(task, "09:00", 40)
+            val started = focusMoment("09:00", 60)
+            val running = repository.startFocus(uid, draft.id, draft.revision, started)!!.active!!
+            val pause = focusMoment("09:34", 94)
+            val paused = repository.pauseFocus(uid, running.id, running.revision, pause)!!.active!!
+            val resume = FocusMoment(wall("09:44") - shortfallMs, minutes(104) - shortfallMs, "boot")
+            val resumed = repository.resumeFocus(uid, paused.id, paused.revision, resume)!!.active!!
+            val decision = resume.copy(wallMs = resume.wallMs + minutes(7), elapsedMs = resume.elapsedMs + minutes(7))
+            val extension = repository.extendFocus(uid, resumed.id, resumed.revision, 15, decision)!!.active
+            assertEquals(minutes(41), repository.focusSession(uid, resumed.id)?.actualWorkMs)
+            if (shortfallMs == 0L) {
+                assertEquals(WorkSessionState.EXTENDED, extension?.state)
+                val pausedExtension = repository.pauseFocus(uid, extension!!.id, extension.revision, decision)!!.active!!
+                assertEquals(WorkSessionState.EXTENDED,
+                    repository.resumeFocus(uid, pausedExtension.id, pausedExtension.revision, decision)!!.active!!.state)
+            } else {
+                assertNull(extension)
+            }
+        }
+    }
+
+    @Test
+    fun countdownResumeKeepsThePauseWhenTheExactRemainderWouldOverlapAFixedBlock() = runBlocking {
+        val task = addFocusTask("alice")
+        repository.addFixedSchedule("alice", "Kuliah", FixedScheduleKind.ROUTINE, 1, 600, 660)
+        val draft = draft(task, "09:00", 25)
+        val running = repository.startFocus("alice", draft.id, draft.revision, focusMoment("09:00", 60))!!.active!!
+        val pause = focusMoment("09:20", 80)
+        val paused = repository.pauseFocus("alice", running.id, running.revision, pause)!!.active!!
+        val overlap = FocusMoment(wall("09:55") + 1L, minutes(115) + 1L, "boot")
+        assertNull(repository.resumeFocus("alice", paused.id, paused.revision, overlap))
+        assertEquals(paused, repository.activeFocus("alice"))
+
+        val resume = focusMoment("11:00", 180)
+        val resumed = repository.resumeFocus("alice", paused.id, paused.revision, resume)!!.active!!
+        assertEquals(resume.elapsedMs + minutes(5), resumed.cutoffElapsedMs)
+    }
+
+    @Test
+    fun deferringWhilePausedClosesFrozenWorkAndUsesLastWorkForBreak() = runBlocking {
+        val task = addFocusTask("alice")
+        val draft = draft(task, "09:00", 25)
+        val running = repository.startFocus("alice", draft.id, draft.revision, focusMoment("09:00", 60))!!.active!!
+        val pause = focusMoment("09:08", 68)
+        val paused = repository.pauseFocus("alice", running.id, running.revision, pause)!!.active!!
+        val defer = focusMoment("09:14", 74)
+        val result = repository.deferFocus("alice", defer.wallMs, defer)!!
+        assertNull(result.active)
+        assertEquals(wall("09:18"), result.plan!!.sessions.first().startAt)
+        assertEquals(minutes(8), repository.focusSession("alice", paused.id)?.actualWorkMs)
+        assertEquals(32, repository.observeTasks("alice").first().single().remainingMinutes)
+        assertEquals(defer.wallMs, repository.observeProfile("alice").first()?.busyUntilAt)
+    }
+
+    @Test
+    fun stoppingPausedFocusKeepsTaskOpenWithoutSettingBusyUntil() = runBlocking {
+        val task = addFocusTask("alice")
+        val draft = draft(task, "09:00", 25)
+        val started = focusMoment("09:00", 60)
+        val running = repository.startFocus("alice", draft.id, draft.revision, started)!!.active!!
+        assertNull(repository.stopFocus("alice", running.id, running.revision, started))
+        val pause = focusMoment("09:08", 68)
+        val paused = repository.pauseFocus("alice", running.id, running.revision, pause)!!.active!!
+        val stop = focusMoment("09:14", 74)
+        assertNull(repository.stopFocus("alice", paused.id, running.revision, stop))
+        val change = repository.stopFocus("alice", paused.id, paused.revision, stop)!!
+        assertNull(change.active)
+        assertEquals(wall("09:18"), change.plan!!.sessions.first().startAt)
+        val unfinished = repository.observeTasks("alice").first().single()
+        assertEquals(TaskStatus.IN_PROGRESS, unfinished.status)
+        assertEquals(32, unfinished.remainingMinutes)
+        assertNull(unfinished.completedAt)
+        assertNull(repository.observeProfile("alice").first()?.busyUntilAt)
+        assertEquals(minutes(8), repository.focusSession("alice", paused.id)?.actualWorkMs)
+        assertNull(repository.stopFocus("alice", paused.id, paused.revision, stop))
     }
 
     @Test

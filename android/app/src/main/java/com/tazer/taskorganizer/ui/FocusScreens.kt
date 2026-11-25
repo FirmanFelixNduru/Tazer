@@ -1,7 +1,5 @@
 package com.tazer.taskorganizer.ui
 
-import android.app.DatePickerDialog
-import android.app.TimePickerDialog
 import android.content.Intent
 import android.os.PowerManager
 import android.provider.Settings
@@ -23,7 +21,6 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -51,26 +48,29 @@ import java.time.ZoneId
 import java.util.Locale
 import kotlinx.coroutines.delay
 
-internal val ActiveFocusStates = setOf(WorkSessionState.RUNNING, WorkSessionState.OVERTIME, WorkSessionState.EXTENDED)
+private val TickingFocusStates = setOf(WorkSessionState.RUNNING, WorkSessionState.OVERTIME, WorkSessionState.EXTENDED)
+internal val ActiveFocusStates = TickingFocusStates + WorkSessionState.PAUSED
 
 @Composable
-internal fun focusClock(runtime: FocusRuntime, sessionId: String): FocusMoment {
-    val clock by produceState(runtime.now(), sessionId) {
-        while (true) {
-            value = runtime.now()
+internal fun focusClock(runtime: FocusRuntime, session: WorkSession): FocusMoment = key(session.id, session.revision) {
+    val clock by produceState(runtime.now()) {
+        while (session.state != WorkSessionState.PAUSED) {
             delay(250)
+            value = runtime.now()
         }
     }
-    return clock
+    clock
 }
 
 internal fun WorkSession.isOvertime(clock: FocusMoment): Boolean =
     state == WorkSessionState.OVERTIME ||
-        (state in ActiveFocusStates && timerBootId == clock.bootId && cutoffElapsedMs?.let { clock.elapsedMs >= it } == true)
+        (state == WorkSessionState.PAUSED && pausedRemainingMs?.let { it <= 0 } == true) ||
+        (state in TickingFocusStates && timerBootId == clock.bootId && cutoffElapsedMs?.let { clock.elapsedMs >= it } == true)
 
 internal fun WorkSession.timerText(clock: FocusMoment, overtime: Boolean): String {
     val cutoff = cutoffElapsedMs
     val duration = when {
+        state == WorkSessionState.PAUSED -> kotlin.math.abs(pausedRemainingMs ?: 0L)
         timerBootId != clock.bootId || cutoff == null -> if (overtime) 0L else plannedMinutes * 60_000L
         overtime -> (clock.elapsedMs - cutoff).coerceAtLeast(0)
         else -> (cutoff - clock.elapsedMs).coerceAtLeast(0)
@@ -90,7 +90,7 @@ internal fun FocusScreen(
     permissions: () -> Unit,
     defer: () -> Unit,
 ) {
-    val clock = focusClock(model.focus, session.id)
+    val clock = focusClock(model.focus, session)
     val validClock = session.timerBootId == clock.bootId && session.cutoffElapsedMs != null
     val active = session.state in ActiveFocusStates
     val overtime = session.isOvertime(clock)
@@ -105,7 +105,9 @@ internal fun FocusScreen(
         )
     }
     LaunchedEffect(session.id, session.revision, overtime, validClock) {
-        if (active && (session.state != WorkSessionState.OVERTIME && overtime || !validClock)) model.refreshFocus()
+        if (session.state in TickingFocusStates && (session.state != WorkSessionState.OVERTIME && overtime || !validClock)) {
+            model.refreshFocus()
+        }
     }
     Column(
         Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 24.dp),
@@ -115,6 +117,7 @@ internal fun FocusScreen(
         Text(task.course, color = MaterialTheme.colorScheme.onSurfaceVariant)
         val status = when (session.state) {
                 WorkSessionState.PENDING -> "Sesi terjadwal"
+                WorkSessionState.PAUSED -> "Dijeda"
                 WorkSessionState.DONE -> "Sesi ditutup"
                 WorkSessionState.CANCELLED -> "Jadwal sesi telah berubah"
                 else -> if (overtime) "Lembur" else "Sedang fokus"
@@ -123,8 +126,8 @@ internal fun FocusScreen(
         if (active || session.state == WorkSessionState.PENDING) {
             Surface(
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp),
-                color = if (overtime) colors.tertiaryContainer else colors.surfaceContainer,
-                contentColor = if (overtime) colors.onTertiaryContainer else colors.onSurface,
+                color = if (session.state == WorkSessionState.PAUSED || overtime) colors.tertiaryContainer else colors.surfaceContainer,
+                contentColor = if (session.state == WorkSessionState.PAUSED || overtime) colors.onTertiaryContainer else colors.onSurface,
                 shape = MaterialTheme.shapes.large,
             ) {
                 Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -143,13 +146,20 @@ internal fun FocusScreen(
             if (!canStart) Text("Sesi dapat dimulai pada jam yang tertera. Lihat jadwal terbaru bila waktunya sudah lewat.")
         }
         if (active) {
-            if (overtime) {
+            if (session.state == WorkSessionState.PAUSED) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { model.resumeFocus(session) }, enabled = !state.busy) { Text("Lanjutkan") }
+                    OutlinedButton(onClick = { model.finishFocus(session) }, enabled = !state.busy) { Text("Sudah Selesai") }
+                    OutlinedButton(onClick = { model.stopFocus(session) }, enabled = !state.busy) { Text("Hentikan sesi") }
+                }
+            } else if (overtime) {
                 Text("Waktu rencana habis. Timer tetap menghitung waktu aktual.")
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = { model.finishFocus(session) }, enabled = !state.busy) { Text("Sudah Selesai") }
                     OutlinedButton(onClick = { decision = "extra" }, enabled = !state.busy && session.state == WorkSessionState.OVERTIME) {
                         Text("Belum Selesai")
                     }
+                    OutlinedButton(onClick = { model.pauseFocus(session) }, enabled = !state.busy) { Text("Jeda") }
                 }
             } else {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -160,8 +170,8 @@ internal fun FocusScreen(
             }
         }
         HorizontalDivider(Modifier.padding(vertical = 4.dp))
-        TextButton(onClick = defer, enabled = !state.busy) { Text("Saya lagi sibuk") }
-        TextButton(onClick = permissions) { Text("Izin pengingat") }
+        OutlinedButton(onClick = defer, enabled = !state.busy) { Text("Saya lagi sibuk") }
+        OutlinedButton(onClick = permissions) { Text("Izin pengingat") }
     }
     if (decision == "decision" && session.state == WorkSessionState.OVERTIME) {
         AlertDialog(
@@ -169,12 +179,12 @@ internal fun FocusScreen(
             title = { Text("Waktu sesi habis") },
             text = { Text("Apakah tugas ini sudah selesai? Timer masih mencatat waktu lembur.") },
             confirmButton = {
-                TextButton(onClick = { decision = null; model.finishFocus(session) }, enabled = !state.busy) {
+                OutlinedButton(onClick = { decision = null; model.finishFocus(session) }, enabled = !state.busy) {
                     Text("Sudah Selesai")
                 }
             },
             dismissButton = {
-                TextButton(onClick = { decision = "extra" }, enabled = !state.busy) { Text("Belum Selesai") }
+                OutlinedButton(onClick = { decision = "extra" }, enabled = !state.busy) { Text("Belum Selesai") }
             },
         )
     }
@@ -207,9 +217,9 @@ private fun ExtensionDialog(busy: Boolean, close: () -> Unit, submit: (Int) -> U
             }
         },
         confirmButton = {
-            TextButton(onClick = { parsed?.let(submit) }, enabled = parsed != null && !busy) { Text("Susun ulang") }
+            OutlinedButton(onClick = { parsed?.let(submit) }, enabled = parsed != null && !busy) { Text("Susun ulang") }
         },
-        dismissButton = { TextButton(onClick = close) { Text("Nanti") } },
+        dismissButton = { OutlinedButton(onClick = close) { Text("Nanti") } },
     )
 }
 
@@ -221,7 +231,6 @@ internal fun DeferFocusDialog(zone: ZoneId, busy: Boolean, model: TazerViewModel
     var minute by rememberSaveable { mutableIntStateOf(initial.hour * 60 + initial.minute) }
     val day = LocalDate.parse(date)
     val validTime = day.atTime(minute / 60, minute % 60).atZone(zone).toInstant().toEpochMilli()
-    val context = LocalContext.current
     AlertDialog(
         onDismissRequest = close,
         title = { Text("Kapan bisa fokus lagi?") },
@@ -229,23 +238,18 @@ internal fun DeferFocusDialog(zone: ZoneId, busy: Boolean, model: TazerViewModel
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Progres yang sudah dikerjakan disimpan. Sesi berikutnya disusun di sekitar jadwal tetap.")
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = {
-                        DatePickerDialog(context, { _, y, m, d -> date = LocalDate.of(y, m + 1, d).toString() },
-                            day.year, day.monthValue - 1, day.dayOfMonth).show()
-                    }, enabled = !busy) { Text(DayFormat.format(day)) }
-                    OutlinedButton(onClick = {
-                        TimePickerDialog(context, { _, h, m -> minute = h * 60 + m }, minute / 60, minute % 60, true).show()
-                    }, enabled = !busy) { Text(formatMinute(minute)) }
+                    PickerDateButton(day, !busy) { date = it.toString() }
+                    PickerTimeButton(minute, !busy) { minute = it }
                 }
             }
         },
         confirmButton = {
-            TextButton(
+            OutlinedButton(
                 onClick = { model.deferFocus(validTime, close) },
                 enabled = !busy && validTime > model.focus.now().wallMs,
             ) { Text("Susun ulang") }
         },
-        dismissButton = { TextButton(onClick = close) { Text("Batal") } },
+        dismissButton = { OutlinedButton(onClick = close) { Text("Batal") } },
     )
 }
 
@@ -266,8 +270,8 @@ internal fun FocusPermissionsDialog(
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(if (notifications) "Notifikasi aktif" else "Notifikasi belum aktif")
                 if (!notifications) {
-                    TextButton(onClick = requestNotification) { Text("Izinkan notifikasi") }
-                    TextButton(onClick = {
+                    OutlinedButton(onClick = requestNotification) { Text("Izinkan notifikasi") }
+                    OutlinedButton(onClick = {
                         launch(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
                             .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName))
                     }) { Text("Pengaturan notifikasi") }
@@ -276,17 +280,17 @@ internal fun FocusPermissionsDialog(
                 if (!exact) {
                     Text("Pengingat dapat terlambat. Timer tetap menghitung berdasarkan waktu perangkat.")
                     focus.exactAlarmSettingsIntent()?.let { intent ->
-                        TextButton(onClick = { launch(intent) }) { Text("Izinkan alarm tepat waktu") }
+                        OutlinedButton(onClick = { launch(intent) }) { Text("Izinkan alarm tepat waktu") }
                     }
                 }
                 Text(if (battery) "Pembatasan baterai dikecualikan" else "Pembatasan baterai mengikuti pengaturan perangkat")
                 if (!battery) {
                     Text("Saat Doze, Android dapat menunda pengingat. Periksa pengaturan baterai jika pengingat sering terlambat.")
-                    TextButton(onClick = { launch(focus.batterySettingsIntent()) }) { Text("Pengaturan baterai") }
+                    OutlinedButton(onClick = { launch(focus.batterySettingsIntent()) }) { Text("Pengaturan baterai") }
                 }
             }
         },
-        confirmButton = { TextButton(onClick = close) { Text("Tutup") } },
+        confirmButton = { Button(onClick = close) { Text("Tutup") } },
     )
 }
 

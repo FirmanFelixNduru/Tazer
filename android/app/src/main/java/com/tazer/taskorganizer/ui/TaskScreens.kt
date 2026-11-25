@@ -1,7 +1,5 @@
 package com.tazer.taskorganizer.ui
 
-import android.app.DatePickerDialog
-import android.app.TimePickerDialog
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -25,7 +23,6 @@ import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -36,7 +33,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -151,12 +147,12 @@ internal fun TasksScreen(
                 }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     if (archived) {
-                        TextButton(onClick = { reopenId = task.id }, enabled = !state.busy) { Text("Buka kembali") }
+                        OutlinedButton(onClick = { reopenId = task.id }, enabled = !state.busy) { Text("Buka kembali") }
                     } else {
-                        TextButton(onClick = { onEdit(task) }, enabled = !state.busy) { Text("Edit") }
-                        TextButton(onClick = { model.finishTask(task) }, enabled = !state.busy) { Text("Tandai selesai") }
+                        OutlinedButton(onClick = { onEdit(task) }, enabled = !state.busy) { Text("Edit") }
+                        OutlinedButton(onClick = { model.finishTask(task) }, enabled = !state.busy) { Text("Tandai selesai") }
                     }
-                    TextButton(onClick = { deleteId = task.id }, enabled = !state.busy) { Text("Hapus") }
+                    OutlinedButton(onClick = { deleteId = task.id }, enabled = !state.busy) { Text("Hapus") }
                 }
             }
             }
@@ -166,8 +162,8 @@ internal fun TasksScreen(
         onDismissRequest = { deleteId = null },
         title = { Text("Hapus tugas?") },
         text = { Text("“" + taskToDelete.title + "” beserta riwayat sesinya akan dihapus.") },
-        confirmButton = { TextButton(onClick = { model.deleteTask(taskToDelete); deleteId = null }) { Text("Hapus") } },
-        dismissButton = { TextButton(onClick = { deleteId = null }) { Text("Batal") } },
+        confirmButton = { Button(onClick = { model.deleteTask(taskToDelete); deleteId = null }) { Text("Hapus") } },
+        dismissButton = { OutlinedButton(onClick = { deleteId = null }) { Text("Batal") } },
     )
     if (taskToReopen != null) key(taskToReopen.id) {
         var minutes by rememberSaveable { mutableStateOf(taskToReopen.initialEstimatedMinutes.toString()) }
@@ -182,11 +178,11 @@ internal fun TasksScreen(
                 )
             },
             confirmButton = {
-                TextButton(onClick = { parsed?.let { model.reopenTask(taskToReopen, it) }; reopenId = null }, enabled = parsed != null) {
+                OutlinedButton(onClick = { parsed?.let { model.reopenTask(taskToReopen, it) }; reopenId = null }, enabled = parsed != null) {
                     Text("Buka kembali")
                 }
             },
-            dismissButton = { TextButton(onClick = { reopenId = null }) { Text("Batal") } },
+            dismissButton = { OutlinedButton(onClick = { reopenId = null }) { Text("Batal") } },
         )
     }
 }
@@ -218,7 +214,6 @@ internal fun TaskEditor(task: Task?, zone: ZoneId, tier: SubscriptionTier?, busy
     var minutes by rememberSaveable(task?.id) { mutableStateOf(task?.remainingMinutes?.toString().orEmpty()) }
     var source by rememberSaveable(task?.id) { mutableStateOf(task?.analysisSource?.name ?: AnalysisSource.OFFLINE.name) }
     var analysisMode by remember(task?.id) { mutableStateOf<AnalyzerMode?>(null) }
-    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val day = LocalDate.parse(date)
     val unchangedDeadline = task != null && day == base.toLocalDate() && minute == base.hour * 60 + base.minute
@@ -256,15 +251,8 @@ internal fun TaskEditor(task: Task?, zone: ZoneId, tier: SubscriptionTier?, busy
         OutlinedTextField(description, { description = it }, label = { Text("Deskripsi") }, minLines = 3, enabled = editable, modifier = Modifier.fillMaxWidth())
         Text("Deadline", style = MaterialTheme.typography.titleSmall)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = {
-                DatePickerDialog(
-                    context, { _, y, m, d -> date = LocalDate.of(y, m + 1, d).toString() },
-                    day.year, day.monthValue - 1, day.dayOfMonth,
-                ).show()
-            }, enabled = editable) { Text(DayFormat.format(day)) }
-            OutlinedButton(onClick = {
-                TimePickerDialog(context, { _, h, m -> minute = h * 60 + m }, minute / 60, minute % 60, true).show()
-            }, enabled = editable) { Text(formatMinute(minute)) }
+            PickerDateButton(day, editable) { date = it.toString() }
+            PickerTimeButton(minute, editable) { minute = it }
         }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = { analyze(AnalyzerMode.OFFLINE) }, enabled = editable && title.isNotBlank()) {

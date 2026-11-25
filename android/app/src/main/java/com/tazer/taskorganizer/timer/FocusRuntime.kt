@@ -81,15 +81,12 @@ class FocusRuntime private constructor(private val context: Context) {
     }
 
     /** Called only after an explicit user action while the Activity is visible. */
-    suspend fun start(uid: String, id: String, revision: Long): FocusChange? {
-        return withContext(NonCancellable) {
-            change(uid) { moment ->
-                repository.startFocus(uid, id, revision, moment).also { result ->
-                    if (result?.active != null) startService()
-                }
+    suspend fun start(uid: String, id: String, revision: Long): FocusChange? =
+        change(uid) { moment ->
+            repository.startFocus(uid, id, revision, moment).also { result ->
+                if (result?.active != null) startService()
             }
         }
-    }
 
     suspend fun done(uid: String, id: String, revision: Long): FocusChange? =
         change(uid) { repository.finishFocus(uid, id, revision, it) }
@@ -99,6 +96,17 @@ class FocusRuntime private constructor(private val context: Context) {
 
     suspend fun pause(uid: String, id: String, revision: Long): FocusChange? =
         change(uid) { repository.pauseFocus(uid, id, revision, it) }
+
+    /** Called after an explicit user action while the Activity is visible. */
+    suspend fun resume(uid: String, id: String, revision: Long): FocusChange? =
+        change(uid) { moment ->
+            repository.resumeFocus(uid, id, revision, moment).also { result ->
+                if (result?.active != null) startService()
+            }
+        }
+
+    suspend fun stop(uid: String, id: String, revision: Long): FocusChange? =
+        change(uid) { repository.stopFocus(uid, id, revision, it) }
 
     suspend fun defer(uid: String, resumeAt: Long): FocusChange? =
         change(uid) { repository.deferFocus(uid, resumeAt, it) }
@@ -112,7 +120,8 @@ class FocusRuntime private constructor(private val context: Context) {
             }
             FocusEventKind.CUTOFF -> {
                 if (!alarms.consume(event)) return@serialized
-                repository.checkFocus(event.uid, event.id, event.revision, moment) ?: return@serialized
+                // Room might have committed a pause before the process could cancel this alarm.
+                repository.checkFocus(event.uid, event.id, event.revision, moment)
             }
             FocusEventKind.START_ALARM -> {
                 if (alarms.consume(event)) onStartAlarm(event, moment)
@@ -150,22 +159,25 @@ class FocusRuntime private constructor(private val context: Context) {
             return@serialized null
         }
         val active = syncLocked(uid, forceNotification = forceNotification) ?: return@serialized null
+        if (active.state == WorkSessionState.PAUSED) return@serialized null
         if (active.state == WorkSessionState.OVERTIME) return@serialized CHECKPOINT_MS
         val untilCutoff = (active.cutoffElapsedMs ?: return@serialized CHECKPOINT_MS) - now().elapsedMs
         untilCutoff.coerceIn(1L, CHECKPOINT_MS)
     }
 
     private suspend fun change(uid: String, transition: suspend (FocusMoment) -> FocusChange?): FocusChange? =
-        serialized {
-            if (owner() != uid) return@serialized null
-            val result = transition(now())
-            if (result != null) syncLocked(uid)
-            result
+        withContext(NonCancellable) {
+            serialized {
+                if (owner() != uid) return@serialized null
+                val result = transition(now()) ?: return@serialized null
+                val current = syncLocked(uid)
+                if (result.active != null) result.copy(active = current) else result
+            }
         }
 
     private suspend fun deactivateLocked(uid: String) {
         try {
-            repository.activeFocus(uid)?.let { repository.pauseFocus(uid, it.id, it.revision, now()) }
+            repository.interruptRunningFocus(uid, now())
         } finally {
             try {
                 saveOwner(null)
@@ -190,6 +202,10 @@ class FocusRuntime private constructor(private val context: Context) {
             stopService()
             if (before != null && before.timerBootId != moment.bootId) notifications.showInterrupted()
             reconcileReminder(uid, moment, forceAlarms)
+        } else if (active.state == WorkSessionState.PAUSED) {
+            stopService()
+            notifications.cancelReminder()
+            alarms.reconcile(emptyList())
         } else {
             notifications.cancelReminder()
             notifications.showActive(active, moment, forceNotification)

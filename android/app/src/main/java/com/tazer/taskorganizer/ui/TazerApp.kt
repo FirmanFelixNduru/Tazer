@@ -4,7 +4,6 @@ import android.content.Intent
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Arrangement
@@ -24,16 +23,17 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -49,6 +49,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
@@ -56,6 +57,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tazer.taskorganizer.data.WorkSession
+import com.tazer.taskorganizer.data.WorkSessionState
 import com.tazer.taskorganizer.timer.FocusRuntime
 import java.time.ZoneId
 
@@ -69,8 +71,9 @@ private val DayColors = lightColorScheme(
     tertiary = Color(0xFF875324),
     tertiaryContainer = Color(0xFFFFE0BB),
     onTertiaryContainer = Color(0xFF55300F),
-    background = Color(0xFFF7FAF7),
-    surface = Color(0xFFF7FAF7),
+    background = Color.White,
+    surface = Color.White,
+    outline = Color(0xFF687B70),
     surfaceContainer = Color(0xFFEBF2ED),
     surfaceContainerLow = Color(0xFFF1F6F2),
     surfaceContainerHigh = Color(0xFFE5EEE7),
@@ -90,13 +93,14 @@ private val NightColors = darkColorScheme(
     tertiary = Color(0xFFF0BA84),
     tertiaryContainer = Color(0xFF593C20),
     onTertiaryContainer = Color(0xFFFFE0BB),
-    background = Color(0xFF111B17),
-    surface = Color(0xFF111B17),
-    surfaceContainer = Color(0xFF1D2923),
-    surfaceContainerLow = Color(0xFF18231E),
+    background = Color.Black,
+    surface = Color.Black,
+    surfaceContainer = Color(0xFF141F19),
+    surfaceContainerLow = Color(0xFF101813),
     surfaceContainerHigh = Color(0xFF25372E),
     onSurface = Color(0xFFDEE9E0),
     onSurfaceVariant = Color(0xFFB6C9BD),
+    outline = Color(0xFF829B8C),
     outlineVariant = Color(0xFF40564A),
 )
 
@@ -107,13 +111,19 @@ private val SectionGlyphs = listOf(TazerGlyph.Tasks, TazerGlyph.Timeline, TazerG
 @Composable
 fun TazerApp(model: TazerViewModel, launch: (Intent) -> Unit, requestNotifications: () -> Unit, permissionRefresh: Int) {
     val state by model.state.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val themePreference = remember(context) { ThemePreference(context.applicationContext) }
+    var theme by remember(themePreference) { mutableStateOf(themePreference.read()) }
+    val dark = theme.isDark()
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(state.message) {
         val message = state.message ?: return@LaunchedEffect
         snackbar.showSnackbar(message)
         model.showMessage(null)
     }
-    MaterialTheme(colorScheme = if (isSystemInDarkTheme()) NightColors else DayColors) {
+    ThemeSystemBars(dark)
+    MaterialTheme(colorScheme = if (dark) NightColors else DayColors) {
+        CompositionLocalProvider(LocalTazerDark provides dark) {
         val workspace = state.data
         when {
             state.recovery || state.uid == null -> Scaffold(snackbarHost = { SnackbarHost(snackbar) }) { padding ->
@@ -124,7 +134,9 @@ fun TazerApp(model: TazerViewModel, launch: (Intent) -> Unit, requestNotificatio
                     CircularProgressIndicator(Modifier.semantics { contentDescription = "Memuat tugas" })
                 }
             }
-            else -> WorkspaceScreen(state, workspace, model, snackbar, launch, requestNotifications, permissionRefresh)
+            else -> WorkspaceScreen(state, workspace, model, snackbar, launch, requestNotifications, permissionRefresh,
+                theme) { selected -> themePreference.save(selected); theme = selected }
+        }
         }
     }
 }
@@ -134,6 +146,7 @@ fun TazerApp(model: TazerViewModel, launch: (Intent) -> Unit, requestNotificatio
 private fun WorkspaceScreen(
     state: TazerState, workspace: Workspace, model: TazerViewModel, snackbar: SnackbarHostState,
     launch: (Intent) -> Unit, requestNotifications: () -> Unit, permissionRefresh: Int,
+    theme: TazerThemeMode, setTheme: (TazerThemeMode) -> Unit,
 ) {
     var section by rememberSaveable(state.uid) { mutableIntStateOf(0) }
     var taskEditorId by rememberSaveable(state.uid) { mutableStateOf<String?>(null) }
@@ -166,8 +179,10 @@ private fun WorkspaceScreen(
                     })
                 },
                 navigationIcon = {
-                    if (editing) TextButton(onClick = closeEditor) { Text("Kembali") }
-                    if (inFocus) TextButton(onClick = model::closeFocus) { Text("Kembali") }
+                    if (editing || inFocus) OutlinedButton(
+                        modifier = Modifier.padding(start = 4.dp, end = 4.dp),
+                        onClick = if (inFocus) model::closeFocus else closeEditor,
+                    ) { Text("Kembali") }
                 },
             )
         },
@@ -219,7 +234,7 @@ private fun WorkspaceScreen(
                         { viewDay = it.toString() }, model::openFocus, { deferDialog = true }, { permissionDialog = true },
                     )
                     2 -> sectionState.SaveableStateProvider("calendar") { CalendarScreen(workspace, state, zone, model) }
-                    3 -> SettingsScreen(workspace, state, model)
+                    3 -> SettingsScreen(workspace, state, model, theme, setTheme)
                 }
             }
         }
@@ -230,16 +245,17 @@ private fun WorkspaceScreen(
 
 @Composable
 private fun FloatingTimerDeck(session: WorkSession, title: String, runtime: FocusRuntime, open: () -> Unit) {
-    val clock = focusClock(runtime, session.id)
+    val clock = focusClock(runtime, session)
     val overtime = session.isOvertime(clock)
+    val paused = session.state == WorkSessionState.PAUSED
     val colors = MaterialTheme.colorScheme
     Surface(
         onClick = open,
         modifier = Modifier.widthIn(max = 720.dp).fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)
             .semantics { contentDescription = "Buka timer aktif" },
         shape = RoundedCornerShape(18.dp),
-        color = if (overtime) colors.tertiaryContainer else colors.primaryContainer,
-        contentColor = if (overtime) colors.onTertiaryContainer else colors.onPrimaryContainer,
+        color = if (paused || overtime) colors.tertiaryContainer else colors.primaryContainer,
+        contentColor = if (paused || overtime) colors.onTertiaryContainer else colors.onPrimaryContainer,
         tonalElevation = 3.dp,
         border = BorderStroke(1.dp, colors.outlineVariant),
     ) {
@@ -248,7 +264,11 @@ private fun FloatingTimerDeck(session: WorkSession, title: String, runtime: Focu
             TazerIcon(TazerGlyph.Timer)
             Column(Modifier.weight(1f)) {
                 Text(title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(if (overtime) "Lembur" else "Sedang fokus", style = MaterialTheme.typography.labelMedium)
+                Text(when {
+                    paused -> "Dijeda"
+                    overtime -> "Lembur"
+                    else -> "Sedang fokus"
+                }, style = MaterialTheme.typography.labelMedium)
             }
             Text(session.timerText(clock, overtime), style = MaterialTheme.typography.titleLarge.copy(fontFeatureSettings = "tnum"))
             TazerIcon(TazerGlyph.Next)

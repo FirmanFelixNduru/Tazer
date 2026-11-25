@@ -18,10 +18,12 @@ import com.tazer.taskorganizer.data.FixedScheduleKind
 import com.tazer.taskorganizer.data.TaskRepository
 import com.tazer.taskorganizer.data.TaskStatus
 import com.tazer.taskorganizer.data.TazerDatabase
+import com.tazer.taskorganizer.data.WorkSession
 import com.tazer.taskorganizer.data.WorkSessionState
 import com.tazer.taskorganizer.domain.FocusMoment
 import java.time.Instant
 import java.time.ZoneId
+import java.util.Locale
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -123,7 +125,47 @@ class FocusStartTest {
     }
 
     @Test
-    fun tappedReminderOpensTimerAndStartKeepsFullTwentyFiveMinutes() = runBlocking {
+    fun pauseCancelsTheCutoffAndResumeRegistersTheNewRevision() = runBlocking {
+        val uid = "focus-pause-runtime-test"
+        val runtime = FocusRuntime.get(context)
+        val room = TaskRepository(TazerDatabase.getInstance(context))
+        val now = runtime.now()
+        val zone = ZoneId.getAvailableZoneIds().asSequence().filter { it.startsWith("Etc/GMT") }
+            .first { Instant.ofEpochMilli(now.wallMs).atZone(ZoneId.of(it)).hour in 10..16 }
+        room.saveProfile(uid, zone, 0, 1440)
+        val task = room.createTask(uid, "Pause runtime", "QA", "", now.wallMs + minutes(90), 3, 25, now.wallMs)
+        val planned = requireNotNull(room.addPlannedSession(uid, task.id, now.wallMs, 25))
+        fun operation(event: FocusEvent) = PendingIntent.getBroadcast(
+            context, 0, event.receiverIntent(context), PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE,
+        )
+        try {
+            runtime.activate(uid)
+            val running = requireNotNull(runtime.start(uid, planned.id, planned.revision)?.active)
+            val cutoff = FocusEvent(running, FocusEventKind.CUTOFF)
+            requireNotNull(operation(cutoff))
+
+            val paused = requireNotNull(runtime.pause(uid, running.id, running.revision)?.active)
+            assertNull(operation(cutoff))
+            runtime.onEvent(cutoff)
+            runtime.onEvent(FocusEvent(running, FocusEventKind.DONE))
+            assertEquals(paused, room.activeFocus(uid))
+
+            val resumed = requireNotNull(runtime.resume(uid, paused.id, paused.revision)?.active)
+            assertEquals(resumed.activeSinceElapsedMs!! + paused.pausedRemainingMs!!, resumed.cutoffElapsedMs)
+            val replacement = FocusEvent(resumed, FocusEventKind.CUTOFF)
+            requireNotNull(operation(replacement))
+            assertNull(operation(cutoff))
+            runtime.done(uid, resumed.id, resumed.revision)
+            assertNull(operation(replacement))
+        } finally {
+            room.activeFocus(uid)?.let { runtime.done(uid, it.id, it.revision) }
+            room.deleteTask(uid, task.id)
+            runtime.deactivate(uid)
+        }
+    }
+
+    @Test
+    fun reminderStartThenPauseBackDeckAndResumePreservesExactTime() = runBlocking {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val automation = instrumentation.uiAutomation
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -136,7 +178,9 @@ class FocusStartTest {
             .first { Instant.ofEpochMilli(now.wallMs).atZone(ZoneId.of(it)).hour in 10..16 }
         val uid = "tazer-demo-local"
         room.saveProfile(uid, zone, 0, 1440)
-        val activity = instrumentation.startActivitySync(Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        val activity = instrumentation.startActivitySync(
+            Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        ) as MainActivity
         var taskId: String? = null
         fun find(root: AccessibilityNodeInfo?, text: String): AccessibilityNodeInfo? {
             if (root == null || !root.isVisibleToUser) return null
@@ -145,10 +189,15 @@ class FocusStartTest {
             return null
         }
         fun node(text: String) = find(automation.rootInActiveWindow, text)
+        fun cutoffAlarm(session: WorkSession) = PendingIntent.getBroadcast(
+            context, 0, FocusEvent(session, FocusEventKind.CUTOFF).receiverIntent(context),
+            PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE,
+        )
         fun click(text: String): Boolean {
             var target = node(text)
             while (target != null && !target.isClickable) target = target.parent
             if (target?.isEnabled != true) return false
+            if (target.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
             val bounds = Rect().also { target.getBoundsInScreen(it) }
             val now = SystemClock.uptimeMillis()
             for (action in listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP)) {
@@ -186,6 +235,44 @@ class FocusStartTest {
             assertEquals(pending.id, running.id)
             assertTrue(requireNotNull(running.startedAt) - pending.plannedStartAt >= 11_000L)
             assertEquals(minutes(25), requireNotNull(running.cutoffElapsedMs) - requireNotNull(running.activeSinceElapsedMs))
+            waitFor("Initial cutoff alarm was not scheduled") { cutoffAlarm(running) != null }
+            delay(1_200L)
+            var nextPauseAttempt = 0L
+            waitFor("Focus screen did not transition to paused") {
+                if (node("Timer fokus") != null && node("Dijeda") != null) return@waitFor true
+                val now = SystemClock.elapsedRealtime()
+                if (now >= nextPauseAttempt && click("Jeda")) nextPauseAttempt = now + 1_000L
+                false
+            }
+            val paused = requireNotNull(room.activeFocus(uid))
+            val remaining = requireNotNull(paused.pausedRemainingMs)
+            assertEquals(running.id, paused.id)
+            assertEquals(WorkSessionState.PAUSED, paused.state)
+            assertTrue(remaining in 1L until minutes(25))
+            assertNull(paused.cutoffElapsedMs)
+            waitFor("Cutoff alarm remained registered while paused") {
+                cutoffAlarm(running) == null && cutoffAlarm(paused) == null
+            }
+            val seconds = (remaining + 999L) / 1_000L
+            val frozen = String.format(Locale.ROOT, "%02d:%02d", seconds / 60, seconds % 60)
+            assertTrue(node(frozen) != null)
+
+            instrumentation.runOnMainSync { activity.onBackPressedDispatcher.onBackPressed() }
+            waitFor("Paused timer deck did not appear") { node("Buka timer aktif") != null && node(frozen) != null }
+            delay(1_350L)
+            assertTrue(node(frozen) != null)
+            waitFor("Paused timer deck could not reopen the session") { click("Buka timer aktif") }
+            waitFor("Reopened timer did not display its frozen value") {
+                node("Timer fokus") != null && node("Dijeda") != null && node(frozen) != null
+            }
+            waitFor("Resume button was not tappable") { click("Lanjutkan") }
+            waitFor("Resumed timer did not return to running") { node("Sedang fokus") != null }
+            val resumed = requireNotNull(room.activeFocus(uid))
+            assertEquals(paused.id, resumed.id)
+            assertEquals(WorkSessionState.RUNNING, resumed.state)
+            assertNull(resumed.pausedRemainingMs)
+            assertEquals(remaining, requireNotNull(resumed.cutoffElapsedMs) - requireNotNull(resumed.activeSinceElapsedMs))
+            waitFor("Resumed cutoff alarm was not scheduled") { cutoffAlarm(resumed) != null }
         } finally {
             room.activeFocus(uid)?.takeIf { it.taskId == taskId }?.let { runtime.done(uid, it.id, it.revision) }
             taskId?.let { room.deleteTask(uid, it) }

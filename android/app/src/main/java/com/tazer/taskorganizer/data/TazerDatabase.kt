@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [UserProfile::class, Task::class, FixedSchedule::class, WorkSession::class, CalendarEvent::class],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 abstract class TazerDatabase : RoomDatabase() {
@@ -39,6 +39,16 @@ abstract class TazerDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE WorkSession ADD COLUMN pausedRemainingMs INTEGER")
+                db.execSQL("ALTER TABLE WorkSession ADD COLUMN pausedFromState TEXT")
+                db.execSQL("ALTER TABLE WorkSession ADD COLUMN workBeforeSegmentMs INTEGER")
+                db.execSQL("ALTER TABLE WorkSession ADD COLUMN continuousWorkBeforeSegmentMs INTEGER")
+                db.execSQL("ALTER TABLE WorkSession ADD COLUMN lastObservedAt INTEGER")
+            }
+        }
+
         @Volatile
         private var instance: TazerDatabase? = null
 
@@ -49,7 +59,7 @@ abstract class TazerDatabase : RoomDatabase() {
 
         internal fun open(context: Context, name: String): TazerDatabase =
             Room.databaseBuilder(context.applicationContext, TazerDatabase::class.java, name)
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .build()
     }
 }

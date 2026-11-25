@@ -1,8 +1,10 @@
 package com.tazer.taskorganizer.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.width
@@ -11,9 +13,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import java.time.YearMonth
@@ -37,8 +38,12 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
@@ -61,6 +66,8 @@ import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.TextStyle
+import java.time.temporal.ChronoUnit
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 private data class TimelineRow(
     val id: String, val title: String, val kind: String, val start: Long, val end: Long,
@@ -70,6 +77,39 @@ private data class TimelineRow(
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun TimelineScreen(
+    workspace: Workspace, state: TazerState, zone: ZoneId, day: LocalDate, selectDay: (LocalDate) -> Unit,
+    openFocus: (WorkSession) -> Unit, defer: () -> Unit, permissions: () -> Unit,
+) {
+    // Each page is one ISO week; swiping left advances a week, right goes back.
+    // The weekday is retained across week boundaries, including month/year changes.
+    val originWeekEpoch = rememberSaveable { day.minusDays((day.dayOfWeek.value - 1).toLong()).toEpochDay() }
+    val originWeek = LocalDate.ofEpochDay(originWeekEpoch)
+    val centerPage = 100_000
+    val pageCount = 200_001
+    val targetPage = (centerPage.toLong() + ChronoUnit.WEEKS.between(originWeek, day.minusDays((day.dayOfWeek.value - 1).toLong())))
+        .coerceIn(0, (pageCount - 1).toLong()).toInt()
+    val pager = rememberPagerState(initialPage = targetPage, pageCount = { pageCount })
+    val latestDay by rememberUpdatedState(day)
+    val latestSelectDay by rememberUpdatedState(selectDay)
+    LaunchedEffect(targetPage) {
+        if (pager.settledPage != targetPage) pager.animateScrollToPage(targetPage)
+    }
+    LaunchedEffect(pager, originWeek) {
+        snapshotFlow { pager.settledPage }.distinctUntilChanged().collect { page ->
+            val selectedWeek = latestDay.minusDays((latestDay.dayOfWeek.value - 1).toLong())
+            val pageWeek = originWeek.plusWeeks((page - centerPage).toLong())
+            if (pageWeek != selectedWeek) latestSelectDay(pageWeek.plusDays((latestDay.dayOfWeek.value - 1).toLong()))
+        }
+    }
+    HorizontalPager(state = pager) { page ->
+        val pageDay = originWeek.plusWeeks((page - centerPage).toLong()).plusDays((day.dayOfWeek.value - 1).toLong())
+        TimelineWeek(workspace, state, zone, pageDay, selectDay, openFocus, defer, permissions)
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TimelineWeek(
     workspace: Workspace, state: TazerState, zone: ZoneId, day: LocalDate, selectDay: (LocalDate) -> Unit,
     openFocus: (WorkSession) -> Unit, defer: () -> Unit, permissions: () -> Unit,
 ) {
@@ -101,26 +141,21 @@ internal fun TimelineScreen(
         item {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                 MonthPicker(YearMonth.from(day)) { month -> selectDay(month.atDay(day.dayOfMonth.coerceAtMost(month.lengthOfMonth()))) }
-                TextButton(onClick = { selectDay(today) }) { Text("Hari Ini") }
+                FilledTonalButton(onClick = { selectDay(today) }) { Text("Hari Ini") }
             }
-            var drag by remember { mutableStateOf(0f) }
             Row(
-                Modifier.fillMaxWidth().padding(vertical = 12.dp).pointerInput(weekStart) {
-                    detectHorizontalDragGestures(onDragEnd = {
-                        if (drag > 60f) selectDay(day.minusWeeks(1)) else if (drag < -60f) selectDay(day.plusWeeks(1))
-                        drag = 0f
-                    }, onHorizontalDrag = { _, amount -> drag += amount })
-                }, horizontalArrangement = Arrangement.SpaceBetween,
+                Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 (0L..6L).forEach { offset ->
                     val date = weekStart.plusDays(offset)
                     val isSelected = date == day
                     Surface(
-                        modifier = Modifier.weight(1f).padding(horizontal = 2.dp).semantics {
-                            contentDescription = DayFormat.format(date)
-                            selected = isSelected
-                        }.clickable { selectDay(date) },
+                        modifier = Modifier.weight(1f).padding(horizontal = 2.dp)
+                            .selectable(selected = isSelected, role = Role.Button, onClick = { selectDay(date) })
+                            .semantics { contentDescription = DayFormat.format(date) },
                         shape = RoundedCornerShape(14.dp),
+                        border = if (isSelected) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                         color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
                         contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
                     ) {
@@ -131,13 +166,13 @@ internal fun TimelineScreen(
                     }
                 }
             }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                TextButton(onClick = { selectDay(day.minusWeeks(1)) }) { Text("Pekan sebelumnya") }
-                TextButton(onClick = { selectDay(day.plusWeeks(1)) }) { Text("Pekan berikutnya") }
+            FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                OutlinedButton(onClick = { selectDay(day.minusWeeks(1)) }) { Text("Pekan sebelumnya") }
+                OutlinedButton(onClick = { selectDay(day.plusWeeks(1)) }) { Text("Pekan berikutnya") }
             }
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                TextButton(onClick = defer, enabled = !state.busy) { Text("Saya lagi sibuk") }
-                TextButton(onClick = permissions) { Text("Izin pengingat") }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                OutlinedButton(onClick = defer, enabled = !state.busy) { Text("Saya lagi sibuk") }
+                OutlinedButton(onClick = permissions) { Text("Izin pengingat") }
             }
             if (state.risks.isNotEmpty()) Text(
                 "Risiko lewat deadline pada ${state.risks.size} tugas. Lihat tab Belum Selesai.",
@@ -164,7 +199,8 @@ private fun TimelineEntry(row: TimelineRow, start: Long, end: Long, now: Long, z
     val active = row.session?.state in ActiveFocusStates
     val overtime = row.session?.state == WorkSessionState.OVERTIME
     val status = when {
-        overtime -> "Waktu rencana habis ? lembur"
+        row.session?.state == WorkSessionState.PAUSED -> "Dijeda"
+        overtime -> "Lewat waktu · Lembur"
         active -> "Sedang fokus"
         row.start > now -> {
             val minutes = ((row.start - now + 59_999) / 60_000)
@@ -227,7 +263,7 @@ private fun ScheduleTag(label: String) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun SettingsScreen(workspace: Workspace, state: TazerState, model: TazerViewModel) {
+internal fun SettingsScreen(workspace: Workspace, state: TazerState, model: TazerViewModel, theme: TazerThemeMode, setTheme: (TazerThemeMode) -> Unit) {
     var editId by rememberSaveable { mutableStateOf<String?>(null) }
     var deleteId by rememberSaveable { mutableStateOf<String?>(null) }
     val profile = workspace.profile
@@ -235,10 +271,12 @@ internal fun SettingsScreen(workspace: Workspace, state: TazerState, model: Taze
     val deleting = workspace.fixed.firstOrNull { it.id == deleteId }
     LazyColumn(contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp)) {
         item {
+            ThemeSetting(theme, setTheme)
+            HorizontalDivider(modifier = Modifier.padding(vertical = 14.dp))
             ProfileForm(profile, state.busy, model)
             HorizontalDivider(modifier = Modifier.padding(vertical = 14.dp))
             Text("Jadwal tetap", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
-            TextButton(onClick = { editId = "" }, enabled = !state.busy) { Text("Tambah jadwal tetap") }
+            OutlinedButton(onClick = { editId = "" }, enabled = !state.busy) { Text("Tambah jadwal tetap") }
         }
         items(workspace.fixed.sortedWith(compareBy<FixedSchedule> { it.dayOfWeek }.thenBy { it.startMinute }), key = { it.id }) { block ->
             Surface(Modifier.fillMaxWidth().padding(vertical = 6.dp), shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
@@ -246,9 +284,9 @@ internal fun SettingsScreen(workspace: Workspace, state: TazerState, model: Taze
                     Text(block.label, style = MaterialTheme.typography.titleMedium)
                     Text(dayName(block.dayOfWeek) + " · " + formatMinute(block.startMinute) + "–" + formatMinute(block.endMinute), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     ScheduleTag(if (block.kind == FixedScheduleKind.BREAK) "Istirahat" else "Rutinitas / kuliah")
-                    FlowRow {
-                        TextButton(onClick = { editId = block.id }, enabled = !state.busy) { Text("Edit jadwal") }
-                        TextButton(onClick = { deleteId = block.id }, enabled = !state.busy) { Text("Hapus jadwal") }
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        OutlinedButton(onClick = { editId = block.id }, enabled = !state.busy) { Text("Edit jadwal") }
+                        OutlinedButton(onClick = { deleteId = block.id }, enabled = !state.busy) { Text("Hapus jadwal") }
                     }
                 }
             }
@@ -264,8 +302,8 @@ internal fun SettingsScreen(workspace: Workspace, state: TazerState, model: Taze
         onDismissRequest = { deleteId = null },
         title = { Text("Hapus jadwal tetap?") },
         text = { Text(deleting.label) },
-        confirmButton = { TextButton(onClick = { model.deleteFixed(deleting); deleteId = null }) { Text("Hapus") } },
-        dismissButton = { TextButton(onClick = { deleteId = null }) { Text("Batal") } },
+        confirmButton = { OutlinedButton(onClick = { model.deleteFixed(deleting); deleteId = null }) { Text("Hapus") } },
+        dismissButton = { OutlinedButton(onClick = { deleteId = null }) { Text("Batal") } },
     )
 }
 
@@ -315,7 +353,7 @@ private fun FixedEditor(block: FixedSchedule?, busy: Boolean, model: TazerViewMo
             Column(Modifier.verticalScroll(rememberScrollState()).imePadding(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(label, { label = it }, label = { Text("Nama jadwal") }, singleLine = true, enabled = !busy)
                 androidx.compose.foundation.layout.Box {
-                    TextButton(onClick = { dayMenu = true }, enabled = !busy) { Text(dayName(day)) }
+                    OutlinedButton(onClick = { dayMenu = true }, enabled = !busy) { Text(dayName(day)) }
                     DropdownMenu(dayMenu, { dayMenu = false }) {
                         (1..7).forEach { choice ->
                             DropdownMenuItem(text = { Text(dayName(choice)) }, onClick = { day = choice; dayMenu = false })
@@ -323,7 +361,7 @@ private fun FixedEditor(block: FixedSchedule?, busy: Boolean, model: TazerViewMo
                     }
                 }
                 androidx.compose.foundation.layout.Box {
-                    TextButton(onClick = { kindMenu = true }, enabled = !busy) {
+                    OutlinedButton(onClick = { kindMenu = true }, enabled = !busy) {
                         Text(if (kind == FixedScheduleKind.ROUTINE.name) "Rutinitas / kuliah" else "Istirahat")
                     }
                     DropdownMenu(kindMenu, { kindMenu = false }) {
@@ -343,11 +381,11 @@ private fun FixedEditor(block: FixedSchedule?, busy: Boolean, model: TazerViewMo
             }
         },
         confirmButton = {
-            TextButton(onClick = {
+            OutlinedButton(onClick = {
                 model.saveFixed(block, label, FixedScheduleKind.valueOf(kind), day, requireNotNull(from), requireNotNull(to), close)
             }, enabled = !busy && valid && label.trim().length in 1..120) { Text("Simpan") }
         },
-        dismissButton = { TextButton(onClick = close) { Text("Batal") } },
+        dismissButton = { OutlinedButton(onClick = close) { Text("Batal") } },
     )
 }
 

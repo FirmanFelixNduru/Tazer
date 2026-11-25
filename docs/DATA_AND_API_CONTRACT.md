@@ -1,6 +1,6 @@
 # Kontrak data dan API
 
-Kontrak API v1 dan skema Room v2. Perilaku perencanaan dan timer mengikuti [spesifikasi scheduler](SCHEDULER_SPEC.md).
+Kontrak API v1 dan skema Room v3. Perilaku perencanaan dan timer mengikuti [spesifikasi scheduler](SCHEDULER_SPEC.md).
 
 ## Room
 
@@ -11,12 +11,14 @@ Gunakan ID UUID string untuk tugas, blok tetap, dan sesi, serta Supabase Auth UI
 | `UserProfile` | `ownerUid` (PK), `zoneId` (IANA), `activeStartMinute`, `activeEndMinute`, `busyUntilAt?` |
 | `Task` | `id` (PK), `ownerUid` (FK), `title`, `course`, `description`, `deadlineAt`, `difficultyScore`, `initialEstimatedMinutes`, `remainingMinutes`, `analysisSource`, `status`, `createdAt`, `completedAt?` |
 | `FixedSchedule` | `id` (PK), `ownerUid` (FK), `label`, `kind`, `dayOfWeek` (ISO 1–7), `startMinute`, `endMinute` |
-| `WorkSession` | `id` (PK), `taskId` dan `ownerUid` (FK komposit), `state`, `plannedStartAt`, `plannedEndAt`, `plannedMinutes`, `startedAt?`, `endedAt?`, `actualWorkMs?`, `timerBootId?`, `activeSinceElapsedMs?`, `cutoffElapsedMs?`, `lastObservedWorkMs?`, `revision` |
+| `WorkSession` | `id` (PK), `taskId` dan `ownerUid` (FK komposit), `state`, `plannedStartAt`, `plannedEndAt`, `plannedMinutes`, `startedAt?`, `endedAt?`, `actualWorkMs?`, `timerBootId?`, `activeSinceElapsedMs?`, `cutoffElapsedMs?`, `lastObservedWorkMs?`, `revision`, `pausedRemainingMs?`, `pausedFromState?`, `workBeforeSegmentMs?`, `continuousWorkBeforeSegmentMs?`, `lastObservedAt?` |
 | `CalendarEvent` | `id` (PK), `ownerUid` (FK), `title`, `startEpochDay`, `endEpochDay`, `startMinute?`, `description` |
 
 Migrasi Room v1 ke v2 menambah tabel `CalendarEvent` dan indeks `(ownerUid,startEpochDay)`. Kedua tanggal sipil inklusif memakai `LocalDate.toEpochDay()`. `startMinute` null berarti seharian, atau menit lokal 0–1439 pada tanggal mulai. CalendarEvent disimpan per UID dan tampil bersama sesi, jadwal tetap, serta deadline tugas di kalender. Kapasitas scheduler tetap mengikuti blok tetap dan profil kerja.
 
-1. `Task.status` tersimpan sebagai `PENDING | IN_PROGRESS | DONE`. `OVERDUE` adalah status tampilan untuk tugas terbuka saat `now >= deadlineAt`, termasuk tugas yang masih punya timer berjalan. `WorkSession.state` memakai `PENDING | RUNNING | OVERTIME | EXTENDED | DONE | CANCELLED`. `REOPENED` adalah aksi pada Task. `FixedSchedule.kind` memakai `ROUTINE | BREAK` dan `analysisSource` memakai `OFFLINE | AI`. `SubscriptionTier` memakai `FREE | PRO | BYOK`.
+Migrasi Room v2 ke v3 menambah lima kolom nullable pada `WorkSession`. Saat `PAUSED`, `pausedRemainingMs` menyimpan sisa waktu bertanda dan `pausedFromState` menyimpan status asal. `workBeforeSegmentMs` dan `continuousWorkBeforeSegmentMs` membawa kerja kumulatif dan kontinu ke segmen berikutnya. `lastObservedAt` menyimpan waktu dinding checkpoint.
+
+1. `Task.status` tersimpan sebagai `PENDING | IN_PROGRESS | DONE`. `OVERDUE` adalah status tampilan untuk tugas terbuka saat `now >= deadlineAt`, termasuk tugas yang masih punya timer berjalan. `WorkSession.state` memakai `PENDING | RUNNING | OVERTIME | EXTENDED | PAUSED | DONE | CANCELLED`. `REOPENED` adalah aksi pada Task. `FixedSchedule.kind` memakai `ROUTINE | BREAK` dan `analysisSource` memakai `OFFLINE | AI`. `SubscriptionTier` memakai `FREE | PRO | BYOK`.
 2. Rentang harian dan blok rutin memakai `[start,end)` dengan `0 <= start < end <= 1440`. Pecah input lintas tengah malam menjadi dua blok rutin, dan validasi profil v1 sebagai satu rentang aktif dalam satu hari. Konversi zona waktu mengikuti spesifikasi scheduler.
 3. `difficultyScore` 1–5, `initialEstimatedMinutes` 1–10080. Estimasi awal adalah nilai yang dikonfirmasi user saat membuat tugas. Setelah dibuat, penyesuaian mengubah `remainingMinutes` dan mempertahankan baseline. `remainingMinutes` 0 hanya untuk `DONE`; keputusan `Belum Selesai` dan reopen menerima sisa yang diperkirakan user, 1–10080. Transisi selesai mengisi `completedAt`, membatalkan rencana mendatang untuk tugas itu, dan mencatat sesi aktual bila ada.
 4. Indeks `Task(ownerUid,status,completedAt)` dan unique `Task(id,ownerUid)` untuk FK komposit; `FixedSchedule(ownerUid,dayOfWeek)` dan `WorkSession(ownerUid,state,plannedStartAt)`, serta indeks `WorkSession(taskId,ownerUid)` untuk FK. Hapus arsip hanya jika `DONE` dan cascade ke sesi. Pakai transaksi Room untuk perubahan tugas/sesi/profil terkait dan pemeriksaan maksimal satu sesi aktif per UID. `actualWorkMs` menyimpan durasi final untuk sesi `DONE` yang telah dimulai. `revision` berubah jika status atau batas waktu yang terkait callback berubah.

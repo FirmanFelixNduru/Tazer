@@ -95,6 +95,14 @@ flowchart TD
     P -->|Ganti rencana| C[CANCELLED session]
     R -->|Batas kerja tercapai| O[OVERTIME]
     E[EXTENDED session] -->|Batas baru tercapai| O
+    R -->|Jeda| J[PAUSED]
+    E -->|Jeda| J
+    O -->|Jeda| J
+    J -->|Lanjutkan| R
+    J -->|Lanjutkan extension| E
+    J -->|Lanjutkan lembur| O
+    J -->|Hentikan sesi| N
+    J -->|Sudah Selesai| D
     O -->|Belum Selesai dan slot cukup| E
     O -->|Belum Selesai dan pindah slot| N[PENDING session baru]
     R -->|Tandai selesai| D[DONE task]
@@ -110,6 +118,8 @@ flowchart TD
 | --- | --- |
 | Mulai sesi | Terima `PENDING` dalam jendela mula dengan UID dan revisi yang valid. Tetapkan `RUNNING`, Task `IN_PROGRESS`, dan cutoff monotonic dari ketukan aktual ditambah `plannedMinutes` penuh. Jika akhir aktual bergeser, susun ulang sesi pending dengan reservasi durasi fokus dan jeda. Jika jendela kedaluwarsa atau durasi penuh menabrak jadwal tetap, akhir jam aktif, atau deadline yang masih akan datang, susun ulang tanpa memulai timer. |
 | Batas kerja | Jadikan `OVERTIME` dengan cutoff asli. Simpan status sekali. Timer menampilkan waktu sejak cutoff selama user belum merespons. |
+| Jeda dan lanjutkan | Simpan satu sesi `PAUSED` per UID dengan kerja aktual dan sisa waktu bertanda yang dibekukan hingga tindakan berikutnya. Batalkan alarm cutoff dan timer foreground. Lanjutkan sesi yang sama dari `elapsedRealtime` baru dan sisa milidetik, setelah memastikan sisa countdown muat sebelum batas keras. Waktu jeda dikeluarkan dari durasi aktual. |
+| Hentikan sesi dijeda | Tutup sesi tanpa menyelesaikan tugas. Simpan progres dan hitung ulang jadwal tanpa mengubah batas sibuk. |
 | Konfirmasi belum selesai | Tutup sesi sumber sebagai `DONE` dengan aktual. Task tetap terbuka. Jalankan Smart Shift, dan buat sesi `EXTENDED` baru atau sesi `PENDING` berikutnya. |
 | Konfirmasi selesai | Tutup sesi aktif sebagai `DONE` bila ada. Task `DONE`, sisa 0, simpan `completedAt`, batalkan sesi pending task, dan sarankan sesi berikutnya. User memulai timer berikutnya. |
 | Reopen atau interupsi | Reopen mengembalikan status Task ke `PENDING` dan menyimpan sisa baru. Interupsi menutup sesi aktual dan mempertahankan `IN_PROGRESS` pada Task. Keduanya menghitung ulang rencana. |
@@ -118,7 +128,7 @@ flowchart TD
 
 1. Start `ForegroundService` dari aksi pengguna. Gunakan countdown persisten dan notifikasi keputusan saat cutoff, dengan aksi **Sudah Selesai** serta deep link **Belum Selesai** ke input waktu. Jika belum ada respons, tampilkan overtime dari cutoff yang sama. Untuk Android 14+, jadikan `specialUse` kandidat awal dan verifikasi subtype, manifest, serta perilaku paket sideload pada Wave 4. [Tipe foreground service](https://developer.android.com/develop/background-work/services/fgs/service-types)
 2. Pasang pengingat awal dan cutoff melalui `AlarmManager.setExactAndAllowWhileIdle` saat tersedia. Minta akses `SCHEDULE_EXACT_ALARM` dalam konteks pengingat, pakai `canScheduleExactAlarms()`, dan tangani izin dicabut termasuk race `SecurityException`. Gunakan alarm inexact `setAndAllowWhileIdle` saat akses ditolak dan jelaskan pengingat dapat terlambat. Permintaan `POST_NOTIFICATIONS` berdiri sendiri. Jika ditolak, sediakan keputusan yang sama di UI. Tangani Doze dengan rekonsiliasi timestamp dan uji perangkat. Tampilkan bantuan setting baterai jika diperlukan. [Exact alarms](https://developer.android.com/develop/background-work/services/alarms) · [Doze dan App Standby](https://developer.android.com/training/monitoring-device-state/doze-standby)
-3. Timer menggunakan `elapsedRealtime` sebagai sumber durasi dalam boot yang sama. Simpan ID boot, awal dan cutoff monotonic, serta durasi terakhir yang teramati pada checkpoint lifecycle atau aksi. Alarm pengingat jadwal memakai waktu wall-clock. Saat process death atau callback terlambat, rekonstruksi dari Room dan waktu sekarang. Setelah reboot, tutup sesi aktif sebagai interupsi dengan checkpoint terakhir, beri tahu pengguna jika durasi perlu koreksi, dan pasang kembali pengingat dari rencana terbaru. Evaluasi ulang jadwal pada perubahan jam atau zona perangkat.
+3. Timer menggunakan `elapsedRealtime` sebagai sumber durasi dalam boot yang sama. Simpan ID boot, awal dan cutoff monotonic, serta durasi terakhir yang teramati pada checkpoint lifecycle atau aksi. Alarm pengingat jadwal memakai waktu wall-clock. Saat process death atau callback terlambat, rekonstruksi dari Room dan waktu sekarang. Setelah reboot, pertahankan `PAUSED` dengan nilai beku, atau tutup sesi yang sempat berjalan sebagai interupsi dengan checkpoint terakhir. Evaluasi ulang jadwal pada perubahan jam atau zona perangkat.
 4. Semua event membawa `ownerUid`, `sessionId`, `revision`, dan jenis aksi. Validasi UID aktif, revision dan status di transaksi Room. PendingIntent memakai identitas unik per event dan immutable. Alarm dan aksi lama menjadi no-op. Jika keputusan valid tiba sesudah cutoff sebelum alarm, selesaikan transisi cutoff dan keputusan dalam transaksi yang sama. Rapikan alarm lama setelah commit. Rekonsiliasi saat app dibuka, saat reboot, dan saat izin exact alarm berubah dapat memperbaiki kegagalan pemasangan setelah commit.
 
 ## Kasus penerimaan Core

@@ -1,7 +1,6 @@
 package com.tazer.taskorganizer.ui
 
-import android.app.DatePickerDialog
-import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -14,12 +13,14 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -39,7 +40,7 @@ private val dayLabels = listOf("Sen", "Sel", "Rab", "Kam", "Jum", "Sab", "Min")
 @Composable
 internal fun MonthPicker(month: YearMonth, selectMonth: (YearMonth) -> Unit) {
     var pickerOpen by rememberSaveable { mutableStateOf(false) }
-    TextButton(onClick = { pickerOpen = true }) {
+    OutlinedButton(onClick = { pickerOpen = true }) {
         Text(monthLabel.format(month), style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.width(6.dp))
         TazerIcon(TazerGlyph.Down)
@@ -66,13 +67,13 @@ internal fun MonthPicker(month: YearMonth, selectMonth: (YearMonth) -> Unit) {
                                     pickerOpen = false
                                 }
                                 if (choice == month) FilledTonalButton(choose, Modifier.weight(1f)) { Text(text) }
-                                else TextButton(choose, Modifier.weight(1f)) { Text(text) }
+                                else OutlinedButton(choose, Modifier.weight(1f)) { Text(text) }
                             }
                         }
                     }
                 }
             },
-            confirmButton = { TextButton(onClick = { pickerOpen = false }) { Text("Tutup") } },
+            confirmButton = { Button(onClick = { pickerOpen = false }) { Text("Tutup") } },
         )
     }
 }
@@ -82,6 +83,7 @@ private data class AgendaItem(
     val event: CalendarEvent? = null, val session: WorkSession? = null,
 )
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 internal fun CalendarScreen(workspace: Workspace, state: TazerState, zone: ZoneId, model: TazerViewModel) {
     val today = localDate(state.now, zone)
@@ -116,11 +118,14 @@ internal fun CalendarScreen(workspace: Workspace, state: TazerState, zone: ZoneI
     }
     var editId by rememberSaveable { mutableStateOf<String?>(null) }
     val openEvent: (CalendarEvent) -> Unit = { editId = it.id }
-    LazyColumn(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)) {
+    LazyColumn(
+        modifier = Modifier.semantics { testTagsAsResourceId = true },
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+    ) {
         item {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.weight(1f)) { MonthPicker(month) { selected = it.atDay(1).toEpochDay() } }
-                TextButton(onClick = { selected = today.toEpochDay() }) { Text("Hari Ini") }
+                OutlinedButton(onClick = { selected = today.toEpochDay() }) { Text("Hari Ini") }
                 IconButton(onClick = { selected = month.minusMonths(1).atDay(1).toEpochDay() }) {
                     TazerIcon(TazerGlyph.Previous, "Bulan sebelumnya")
                 }
@@ -151,17 +156,12 @@ internal fun CalendarScreen(workspace: Workspace, state: TazerState, zone: ZoneI
         }
         items(agenda[day].orEmpty(), key = AgendaItem::key) { item ->
             ListItem(
-                headlineContent = { Text(item.title) },
+                headlineContent = { AgendaPill(item.title, item.kind) },
                 supportingContent = {
                     val details = item.event?.description?.takeIf(String::isNotBlank)
                     Text(listOfNotNull(item.kind, details).joinToString(" · "))
                 },
-                leadingContent = {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                        AgendaDot(item.kind)
-                        Text(item.time, style = MaterialTheme.typography.labelMedium)
-                    }
-                },
+                leadingContent = { Text(item.time, style = MaterialTheme.typography.labelMedium) },
                 trailingContent = when {
                     item.event != null -> ({ IconButton(onClick = { openEvent(item.event) }) { TazerIcon(TazerGlyph.Edit, "Edit " + item.title) } })
                     item.session?.let { it.state in ActiveFocusStates || it.state == WorkSessionState.PENDING && day == today && it.plannedEndAt > state.now } == true ->
@@ -212,6 +212,7 @@ private fun CalendarWeek(
             ) {
                 Surface(
                     shape = CircleShape,
+                    border = if (active || current) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                     color = when {
                         active -> MaterialTheme.colorScheme.primary
                         current -> MaterialTheme.colorScheme.primaryContainer
@@ -229,13 +230,12 @@ private fun CalendarWeek(
                     }
                 }
                 if (entries.isNotEmpty()) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                        AgendaDot(entries.first().kind)
-                        Text(if (entries.size == 1) entries.first().time else "+${entries.size}",
-                            style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    val first = entries.first()
+                    AgendaPill(if (entries.size == 1) first.title else "${entries.size} agenda", first.kind,
+                        Modifier.fillMaxWidth().padding(horizontal = 2.dp), compact = true)
+                    if (entries.size == 1 && first.time != "Seharian") {
+                        Text(first.time, style = MaterialTheme.typography.labelSmall, maxLines = 1)
                     }
-                    if (entries.size == 1) Text(entries.first().title, Modifier.padding(horizontal = 2.dp),
-                        style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
         }
@@ -249,7 +249,7 @@ private fun CalendarWeek(
                 if (start > cursor) Spacer(Modifier.weight((start - cursor).toFloat()))
                 Surface(
                     onClick = { edit(event) },
-                    modifier = Modifier.weight((end - start + 1).toFloat()).padding(horizontal = 1.dp),
+                    modifier = Modifier.weight((end - start + 1).toFloat()).padding(horizontal = 1.dp).testTag("calendar-event-span"),
                     color = MaterialTheme.colorScheme.secondaryContainer,
                     contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
                     shape = RoundedCornerShape(7.dp),
@@ -266,14 +266,22 @@ private fun CalendarWeek(
 }
 
 @Composable
-private fun AgendaDot(kind: String) {
-    val color = when (kind) {
-        "Deadline" -> MaterialTheme.colorScheme.error
-        "Sesi fokus" -> MaterialTheme.colorScheme.primary
-        "Acara" -> MaterialTheme.colorScheme.tertiary
-        else -> MaterialTheme.colorScheme.secondary
+private fun AgendaPill(title: String, kind: String, modifier: Modifier = Modifier, compact: Boolean = false) {
+    val colors = MaterialTheme.colorScheme
+    val (background, ink) = when (kind) {
+        "Deadline" -> colors.errorContainer to colors.onErrorContainer
+        "Sesi fokus" -> colors.primaryContainer to colors.onPrimaryContainer
+        else -> colors.secondaryContainer to colors.onSecondaryContainer
     }
-    Box(Modifier.size(5.dp).background(color, CircleShape))
+    Surface(modifier.testTag("calendar-event-pill"), color = background, contentColor = ink, shape = RoundedCornerShape(7.dp)) {
+        Text(
+            title,
+            Modifier.padding(horizontal = if (compact) 3.dp else 8.dp, vertical = if (compact) 1.dp else 3.dp),
+            style = if (compact) MaterialTheme.typography.labelSmall else MaterialTheme.typography.titleSmall,
+            maxLines = if (compact) 1 else 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
 }
 
 @Composable
@@ -289,8 +297,8 @@ private fun EventEditor(event: CalendarEvent?, selected: LocalDate, busy: Boolea
     if (deleting && event != null) {
         AlertDialog(
             onDismissRequest = { deleting = false }, title = { Text("Hapus acara?") }, text = { Text(event.title) },
-            confirmButton = { TextButton(enabled = !busy, onClick = { model.deleteEvent(event.id, close) }) { Text("Hapus") } },
-            dismissButton = { TextButton(onClick = { deleting = false }) { Text("Batal") } },
+            confirmButton = { Button(enabled = !busy, onClick = { model.deleteEvent(event.id, close) }) { Text("Hapus") } },
+            dismissButton = { OutlinedButton(onClick = { deleting = false }) { Text("Batal") } },
         )
         return
     }
@@ -312,7 +320,7 @@ private fun EventEditor(event: CalendarEvent?, selected: LocalDate, busy: Boolea
                 if (!allDay) OutlinedTextField(time, { time = it }, label = { Text("Jam mulai (HH:mm)") }, singleLine = true,
                     enabled = !busy, isError = minute == null)
                 OutlinedTextField(description, { description = it }, label = { Text("Keterangan (opsional)") }, enabled = !busy)
-                if (event != null) TextButton(onClick = { deleting = true }, enabled = !busy) { Text("Hapus acara") }
+                if (event != null) OutlinedButton(onClick = { deleting = true }, enabled = !busy) { Text("Hapus acara") }
             }
         },
         confirmButton = {
@@ -321,19 +329,12 @@ private fun EventEditor(event: CalendarEvent?, selected: LocalDate, busy: Boolea
                 enabled = !busy && title.isNotBlank() && through >= from && (allDay || minute != null),
             ) { Text("Simpan acara") }
         },
-        dismissButton = { TextButton(onClick = close, enabled = !busy) { Text("Batal") } },
+        dismissButton = { OutlinedButton(onClick = close, enabled = !busy) { Text("Batal") } },
     )
 }
 
 @Composable
 private fun EventDate(label: String, epochDay: Long, enabled: Boolean, change: (Long) -> Unit) {
-    val context = LocalContext.current
     val date = LocalDate.ofEpochDay(epochDay)
-    OutlinedButton(onClick = {
-        DatePickerDialog(context, { _, year, month, day ->
-            change(LocalDate.of(year, month + 1, day).toEpochDay())
-        }, date.year, date.monthValue - 1, date.dayOfMonth).show()
-    }, enabled = enabled, modifier = Modifier.fillMaxWidth()) {
-        Text(label + " · " + DayFormat.format(date))
-    }
+    PickerDateButton(date, enabled, label + " · " + DayFormat.format(date)) { change(it.toEpochDay()) }
 }

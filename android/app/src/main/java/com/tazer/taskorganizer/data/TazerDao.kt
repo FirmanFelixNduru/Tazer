@@ -54,7 +54,7 @@ internal interface TazerDao {
             AND NOT EXISTS (
                 SELECT 1 FROM WorkSession
                 WHERE ownerUid = :uid AND taskId = :id
-                    AND state IN ('RUNNING', 'OVERTIME', 'EXTENDED')
+                    AND state IN ('RUNNING', 'OVERTIME', 'EXTENDED', 'PAUSED')
             )
     """)
     suspend fun deleteTask(uid: String, id: String): Int
@@ -79,7 +79,7 @@ internal interface TazerDao {
             AND NOT EXISTS (
                 SELECT 1 FROM WorkSession
                 WHERE ownerUid = :uid AND taskId = :taskId
-                    AND state IN ('RUNNING', 'OVERTIME', 'EXTENDED')
+                    AND state IN ('RUNNING', 'OVERTIME', 'EXTENDED', 'PAUSED')
             )
     """)
     suspend fun completeTask(uid: String, taskId: String, completedAt: Long): Int
@@ -128,7 +128,7 @@ internal interface TazerDao {
     @Query("""
         SELECT EXISTS(
             SELECT 1 FROM WorkSession WHERE ownerUid = :uid
-            AND state IN ('RUNNING', 'OVERTIME', 'EXTENDED')
+            AND state IN ('RUNNING', 'OVERTIME', 'EXTENDED', 'PAUSED')
         )
     """)
     suspend fun hasActiveSession(uid: String): Boolean
@@ -138,15 +138,16 @@ internal interface TazerDao {
 
     @Query("""
         SELECT * FROM WorkSession WHERE ownerUid = :uid
-        AND state IN ('RUNNING', 'OVERTIME', 'EXTENDED')
+        AND state IN ('RUNNING', 'OVERTIME', 'EXTENDED', 'PAUSED')
         ORDER BY plannedStartAt, id LIMIT 1
     """)
     suspend fun findActiveFocus(uid: String): WorkSession?
 
     @Query("""
         SELECT MAX(CASE
-            WHEN timerBootId = :bootId AND activeSinceElapsedMs <= :elapsedMs - actualWorkMs
-                THEN :wallMs - (:elapsedMs - activeSinceElapsedMs - actualWorkMs)
+            WHEN timerBootId = :bootId
+                AND activeSinceElapsedMs <= :elapsedMs - actualWorkMs + COALESCE(workBeforeSegmentMs, 0)
+                THEN :wallMs - (:elapsedMs - activeSinceElapsedMs - actualWorkMs + COALESCE(workBeforeSegmentMs, 0))
             ELSE endedAt END)
         FROM WorkSession WHERE ownerUid = :uid AND state = 'DONE' AND actualWorkMs IS NOT NULL
     """)
@@ -162,7 +163,10 @@ internal interface TazerDao {
     @Query("""
         UPDATE WorkSession SET state = :state, startedAt = :startedAt, endedAt = :endedAt,
             actualWorkMs = :actualWorkMs, timerBootId = :bootId, activeSinceElapsedMs = :startElapsedMs,
-            cutoffElapsedMs = :cutoffElapsedMs, lastObservedWorkMs = :checkpointMs, revision = :revision
+            cutoffElapsedMs = :cutoffElapsedMs, lastObservedWorkMs = :checkpointMs, revision = :revision,
+            pausedRemainingMs = :pausedRemainingMs, pausedFromState = :pausedFromState,
+            workBeforeSegmentMs = :workBeforeSegmentMs,
+            continuousWorkBeforeSegmentMs = :continuousWorkBeforeSegmentMs, lastObservedAt = :lastObservedAt
         WHERE ownerUid = :uid AND id = :id AND revision = :previousRevision
     """)
     suspend fun updateFocus(
@@ -178,6 +182,11 @@ internal interface TazerDao {
         cutoffElapsedMs: Long?,
         checkpointMs: Long?,
         revision: Long,
+        pausedRemainingMs: Long?,
+        pausedFromState: WorkSessionState?,
+        workBeforeSegmentMs: Long?,
+        continuousWorkBeforeSegmentMs: Long?,
+        lastObservedAt: Long?,
     ): Int
 
     @Query("""

@@ -1,81 +1,82 @@
 # Graph Report - Project-B  (2026-11-26)
 
 ## Corpus Check
-- 66 files · ~41,064 words
+- 71 files · ~46,256 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 15 file(s) not represented in the graph (top: .xml 8, .properties 2, (none) 1)
 
 ## Summary
-- 1215 nodes · 3135 edges · 92 communities (34 shown, 58 thin omitted)
-- Extraction: 95% EXTRACTED · 5% INFERRED · 0% AMBIGUOUS · INFERRED: 167 edges (avg confidence: 0.85)
+- 1337 nodes · 3515 edges · 99 communities (35 shown, 64 thin omitted)
+- Extraction: 95% EXTRACTED · 5% INFERRED · 0% AMBIGUOUS · INFERRED: 190 edges (avg confidence: 0.85)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `2f0c13b8`
+- Built from commit: `fbef7b5f`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
 ## Community Hubs (Navigation)
 - AndroidIntegration
-- TazerViewModel
+- TazerDao
 - TaskRepository
-- handler.ts
 - SchedulerTest
-- TaskRepositoryTest
+- SchedulerTest
+- FocusScreens.kt
 - TaskScreens.kt
 - TazerDao
-- TazerApp.kt
+- TaskScreens.kt
 - Spesifikasi scheduler dan timer
 - Supabase Auth
 - Notification
 - FocusRuntime
-- Job
 - ByokVault.kt
-- IntegrationError
+- FocusEvent
+- FocusScreen
 - WorkspaceScreen
 - WorkspaceScreen
-- AndroidIntegrationTest.kt
 - FocusNotificationTest.kt
+- TaskScreens.kt
 - SettingsScreen
 - TazerState
-- Uri
+- MainActivity.kt
 - FocusNotifications
+- DateTimeButtons.kt
 - compilerOptions
-- Smart Shift
-- AuthFlow
+- fail
+- FocusStartTest.kt
 - ScheduleScreens.kt
-- CalendarScreens.kt
+- TazerGlyph
 - FocusReceiver.kt
-- 20261125000000_entitlement.sql
-- Focus timer state machine
+- MainActivity
+- TazerState
 - Autentikasi dan endpoint HTTP
 - Rencana eksekusi Tazer
-- FocusStartTest.kt
+- Task
 - Rencana eksekusi Tazer
 - fail
-- IntegrationHttp.kt
 - SessionVault
 - HTTP error envelope
-- MainActivity.kt
 - HTTP error envelope
-- instant
 - tazer-v1.sql
 - Subscription
-- .readLink()
+- Intent
+- CalendarRepository
+- build.gradle.kts
 - AuthPkce.kt
-- FocusNotificationTest.kt
+- DateTimeButtons.kt
+- CalendarDao
 
 ## God Nodes (most connected - your core abstractions)
-1. `TazerViewModel` - 69 edges
-2. `TaskRepository` - 60 edges
-3. `WorkSession` - 53 edges
-4. `FocusRuntime` - 48 edges
-5. `FocusMoment` - 43 edges
-6. `AndroidIntegration` - 41 edges
-7. `fail()` - 38 edges
-8. `TaskRepositoryTest` - 35 edges
+1. `TazerViewModel` - 71 edges
+2. `TaskRepository` - 67 edges
+3. `WorkSession` - 58 edges
+4. `FocusMoment` - 57 edges
+5. `FocusRuntime` - 50 edges
+6. `TaskRepositoryTest` - 41 edges
+7. `AndroidIntegration` - 41 edges
+8. `fail()` - 38 edges
 9. `TazerDao` - 32 edges
-10. `Task` - 29 edges
+10. `SchedulerTest` - 28 edges
 
 ## Surprising Connections (you probably didn't know these)
 - `Slot kosong dan batas sesi` --references--> `FixedSchedule`  [INFERRED]
@@ -95,165 +96,170 @@
 ## Hyperedges (group relationships)
 - **Transactional work history and replanning** — agents_room_repository, docs_data_and_api_contract_worksession, docs_data_and_api_contract_task, docs_scheduler_spec_smart_shift, docs_scheduler_spec_dynamic_reschedule, docs_scheduler_spec_weighted_time_allocation [EXTRACTED 1.00]
 - **Agenda pada kalender lokal** — docs_data_and_api_contract_calendarevent, docs_data_and_api_contract_worksession, docs_data_and_api_contract_fixedschedule, docs_data_and_api_contract_task [EXTRACTED 1.00]
+- **Persistensi status, progres, dan sisa waktu saat jeda** — docs_scheduler_spec_paused, docs_scheduler_spec_jeda_dan_lanjutkan, docs_data_and_api_contract_worksession_pausedremainingms, docs_data_and_api_contract_worksession_pausedfromstate, docs_data_and_api_contract_worksession_workbeforesegmentms, docs_data_and_api_contract_worksession_continuousworkbeforesegmentms [INFERRED 0.95]
 - **Transactional work history and replanning** — agents_room_repository, docs_data_and_api_contract_worksession, docs_data_and_api_contract_task, docs_scheduler_spec_smart_shift, docs_scheduler_spec_dynamic_reschedule, docs_scheduler_spec_weighted_time_allocation [EXTRACTED 1.00]
 
-## Communities (92 total, 58 thin omitted)
+## Communities (99 total, 64 thin omitted)
 
 ### Community 0 - "AndroidIntegration"
-Cohesion: 0.10
-Nodes (8): FixedScheduleKind, BREAK, ROUTINE, WorkSession, FocusChange, TaskRepository, FocusClock, FocusMoment
+Cohesion: 0.07
+Nodes (21): AnalysisSource, AI, OFFLINE, CalendarEvent, FixedSchedule, FixedScheduleKind, BREAK, ROUTINE (+13 more)
 
-### Community 1 - "TazerViewModel"
-Cohesion: 0.06
-Nodes (16): CalendarDao, AnalysisSource, AI, OFFLINE, CalendarEvent, FixedSchedule, Task, TaskStatus (+8 more)
-
-### Community 2 - "TaskRepository"
+### Community 1 - "TazerDao"
 Cohesion: 0.06
 Nodes (51): Analysis, analysisOutput(), analysisSchema, integerBetween(), isUtcTimestamp(), object(), TaskInput, taskInput() (+43 more)
 
-### Community 3 - "handler.ts"
-Cohesion: 0.06
-Nodes (17): ByokProvider, GEMINI, GROQ, SubscriptionTier, BYOK, FREE, PRO, TaskEditor() (+9 more)
+### Community 2 - "TaskRepository"
+Cohesion: 0.08
+Nodes (9): TaskEditor(), AnalyzerMode, BYOK, CLOUD, OFFLINE, FocusTarget, rejectsSession(), TaskInput (+1 more)
 
-### Community 4 - "SchedulerTest"
-Cohesion: 0.10
-Nodes (14): continuousWorkMs(), focusDurationMs(), remainingAfterInterruption(), DeadlineRisk, PlannedWork, SchedulePlan, Scheduler, Option (+6 more)
+### Community 3 - "SchedulerTest"
+Cohesion: 0.08
+Nodes (16): continuousWorkMs(), focusAvailableMs(), FocusClock, focusDurationMs(), remainingAfterInterruption(), DeadlineRisk, PlannedWork, SchedulePlan (+8 more)
 
-### Community 8 - "TazerApp.kt"
+### Community 5 - "FocusScreens.kt"
+Cohesion: 0.12
+Nodes (36): CalendarEvent, CalendarEvent(ownerUid,startEpochDay), CalendarEvent.startEpochDay dan endEpochDay, CalendarEvent.startMinute, FixedSchedule, Kalender lokal, Migrasi Room v1 ke v2, Migrasi Room v2 ke v3 (+28 more)
+
+### Community 6 - "TaskScreens.kt"
 Cohesion: 0.19
 Nodes (3): AndroidIntegration, Session, Account
 
-### Community 9 - "Spesifikasi scheduler dan timer"
-Cohesion: 0.12
-Nodes (13): dayName(), FixedEditor(), ProfileForm(), ScheduleTag(), SettingsScreen(), TimeField(), TimelineEntry(), TimelineRow (+5 more)
+### Community 7 - "TazerDao"
+Cohesion: 0.09
+Nodes (33): Backend, Server secret store, account_entitlements, analysis_usage, Analyzer input validation, Android Keystore AES-GCM, Atomic quota RPC, BYOK (+25 more)
 
-### Community 10 - "Supabase Auth"
+### Community 8 - "TaskScreens.kt"
+Cohesion: 0.08
+Nodes (5): formatTimer(), timerText(), isDark(), ThemeSetting(), ThemeSystemBars()
+
+### Community 9 - "Spesifikasi scheduler dan timer"
 Cohesion: 0.11
-Nodes (7): AgendaDot(), AgendaItem, CalendarScreen(), CalendarWeek(), EventDate(), EventEditor(), MonthPicker()
+Nodes (12): dayName(), FixedEditor(), ProfileForm(), ScheduleTag(), SettingsScreen(), TimeField(), TimelineEntry(), TimelineRow (+4 more)
 
 ### Community 11 - "Notification"
 Cohesion: 0.10
-Nodes (27): Android :app, Android data layer, Android timer layer, APK Debug, com.tazer.taskorganizer, Compose UI and ViewModel, Impeccable, Kotlin domain (+19 more)
+Nodes (9): AgendaItem, AgendaPill(), CalendarScreen(), CalendarWeek(), EventDate(), EventEditor(), MonthPicker(), formatTime() (+1 more)
 
-### Community 16 - "IntegrationError"
+### Community 13 - "FocusRuntime"
+Cohesion: 0.19
+Nodes (6): ReleaseUiTest, TazerThemeMode, DARK, LIGHT, SYSTEM, ThemePreference
+
+### Community 16 - "FocusScreen"
+Cohesion: 0.15
+Nodes (14): DeferFocusDialog(), ExtensionDialog(), focusClock(), FocusPermissionsDialog(), FocusScreen(), isOvertime(), formatDate(), schedulingTask() (+6 more)
+
+### Community 18 - "WorkspaceScreen"
 Cohesion: 0.19
 Nodes (6): FocusEvent, FocusLink, FocusLinkKind, ACTIVE, EXTEND, REMINDER
 
-### Community 17 - "WorkspaceScreen"
-Cohesion: 0.14
-Nodes (22): Backend, Server secret store, Analyzer input validation, Entitlement akun dan kuota bulanan, Gemini API Free, GET /auth/session, GET /subscription, Groq Free (+14 more)
-
-### Community 18 - "WorkspaceScreen"
-Cohesion: 0.22
-Nodes (20): CalendarEvent, CalendarEvent(ownerUid,startEpochDay), CalendarEvent.startEpochDay dan endEpochDay, CalendarEvent.startMinute, FixedSchedule, Kalender lokal, Migrasi Room v1 ke v2, Room schema (+12 more)
-
-### Community 19 - "AndroidIntegrationTest.kt"
-Cohesion: 0.14
-Nodes (15): Aturan global, Batas modul dan struktur target, Graphify, Handoff `i-have-adhd`, i-have-adhd handoff, Pemeriksaan sebelum handoff, Ponytail, Tazer (Task Organizer) (+7 more)
+### Community 20 - "TaskScreens.kt"
+Cohesion: 0.17
+Nodes (5): AndroidIntegrationTest, backendJson(), call(), HttpResponse, parseJson()
 
 ### Community 21 - "SettingsScreen"
-Cohesion: 0.18
-Nodes (14): DeferFocusDialog(), ExtensionDialog(), focusClock(), FocusPermissionsDialog(), FocusScreen(), isOvertime(), formatDate(), schedulingTask() (+6 more)
+Cohesion: 0.13
+Nodes (16): ByokCredential, AuthCallback, PasswordRecovery, SignedIn, ByokProvider, GEMINI, GROQ, ByokSettings (+8 more)
 
 ### Community 22 - "TazerState"
+Cohesion: 0.13
+Nodes (22): Android :app, Android data layer, Android timer layer, APK Debug, com.tazer.taskorganizer, Compose UI and ViewModel, Kotlin domain, Room repository (+14 more)
+
+### Community 24 - "FocusNotifications"
 Cohesion: 0.12
-Nodes (17): IntegrationError, AI_UNAVAILABLE, AUTH_REJECTED, BYOK_KEY_MISSING, BYOK_REQUIRED, BYOK_STORAGE_UNAVAILABLE, EMAIL_UNVERIFIED, INVALID_AUTH (+9 more)
+Nodes (17): Aturan global, Batas modul dan struktur target, Graphify, Handoff `i-have-adhd`, i-have-adhd handoff, Impeccable, Pemeriksaan sebelum handoff, Ponytail (+9 more)
+
+### Community 25 - "DateTimeButtons.kt"
+Cohesion: 0.13
+Nodes (5): NumberWheel(), PickerDateButton(), PickerTimeButton(), platformTheme(), TimeSpinner()
 
 ### Community 26 - "compilerOptions"
-Cohesion: 0.14
-Nodes (15): devDependencies, @types/node@^22.0.0, typescript@~5.9.3, engines, node, name, private, scripts (+7 more)
+Cohesion: 0.12
+Nodes (19): APK sideload, GitHub Releases gratis, Node.js + TypeScript, Rp 0 free tier, Signed APK Release, Cloudflare Workers Free, Web Fetch API, apksigner verify (+11 more)
 
-### Community 27 - "Smart Shift"
-Cohesion: 0.14
-Nodes (16): account_entitlements, analysis_usage, Android Keystore AES-GCM, Atomic quota RPC, BYOK, Kuota bulanan UTC, PostgreSQL, PRO tier (+8 more)
+### Community 27 - "fail"
+Cohesion: 0.25
+Nodes (13): Tokens, analyzeGemini(), analyzeGroq(), analyzeWithProvider(), integerSchema(), schema(), validateByok(), analysis() (+5 more)
 
-### Community 30 - "CalendarScreens.kt"
-Cohesion: 0.20
-Nodes (13): Tokens, analysis(), AuthCallback, PasswordRecovery, SignedIn, fail(), integer(), IntegrationException (+5 more)
+### Community 28 - "FocusStartTest.kt"
+Cohesion: 0.19
+Nodes (7): AuthFlow, GOOGLE, RECOVERY, SIGN_UP, AuthPkce, isAuthCallback(), PendingAuth
+
+### Community 30 - "TazerGlyph"
+Cohesion: 0.18
+Nodes (11): TazerGlyph, Add, Calendar, Down, Edit, Next, Previous, Settings (+3 more)
 
 ### Community 31 - "FocusReceiver.kt"
 Cohesion: 0.31
 Nodes (3): ByokVault, CredentialCipher, AccountUid
 
-### Community 32 - "20261125000000_entitlement.sql"
-Cohesion: 0.29
-Nodes (15): Belum Selesai and Selesai tabs, OVERDUE display status, Task.status, CANCELLED session, DONE task, Durasi fokus penuh, EXTENDED session, Focus timer state machine (+7 more)
+### Community 33 - "TazerState"
+Cohesion: 0.44
+Nodes (5): AccountSettings(), ByokForm(), LoginScreen(), SecretField(), TazerState
 
-### Community 33 - "Focus timer state machine"
+### Community 34 - "Autentikasi dan endpoint HTTP"
+Cohesion: 0.11
+Nodes (18): IntegrationError, AI_UNAVAILABLE, AUTH_REJECTED, BYOK_KEY_MISSING, BYOK_REQUIRED, BYOK_STORAGE_UNAVAILABLE, EMAIL_UNVERIFIED, INVALID_AUTH (+10 more)
+
+### Community 37 - "Rencana eksekusi Tazer"
+Cohesion: 0.14
+Nodes (15): devDependencies, @types/node@^22.0.0, typescript@~5.9.3, engines, node, name, private, scripts (+7 more)
+
+### Community 38 - "fail"
 Cohesion: 0.33
 Nodes (3): OfflineAnalysis, OfflineAnalyzer, OfflineAnalyzerTest
 
-### Community 34 - "Autentikasi dan endpoint HTTP"
+### Community 40 - "SessionVault"
 Cohesion: 0.14
 Nodes (13): compilerOptions, lib, module, noUncheckedIndexedAccess, noUnusedLocals, noUnusedParameters, outDir, rootDir (+5 more)
 
-### Community 35 - "Rencana eksekusi Tazer"
-Cohesion: 0.18
-Nodes (13): APK sideload, GitHub Releases gratis, Node.js + TypeScript, Rp 0 free tier, Signed APK Release, Cloudflare Workers Free, Web Fetch API, apksigner verify (+5 more)
+### Community 41 - "HTTP error envelope"
+Cohesion: 0.31
+Nodes (14): Belum Selesai and Selesai tabs, OVERDUE display status, Task.status, WorkSession.state, CANCELLED session, DONE task, EXTENDED session, Focus timer state machine (+6 more)
 
-### Community 36 - "FocusStartTest.kt"
-Cohesion: 0.32
-Nodes (9): analyzeGemini(), analyzeGroq(), analyzeWithProvider(), integerSchema(), schema(), validateByok(), ByokCredential, ByokSettings (+1 more)
-
-### Community 37 - "Rencana eksekusi Tazer"
+### Community 43 - "HTTP error envelope"
 Cohesion: 0.29
 Nodes (11): `FixedSchedule`, IF, index_FixedSchedule_ownerUid_dayOfWeek, index_Task_id_ownerUid, index_Task_ownerUid_status_completedAt, index_WorkSession_ownerUid_state_plannedStartAt, index_WorkSession_taskId_ownerUid, room_master_table (+3 more)
 
-### Community 38 - "fail"
-Cohesion: 0.27
-Nodes (4): backendJson(), call(), HttpResponse, parseJson()
-
-### Community 40 - "SessionVault"
-Cohesion: 0.18
-Nodes (11): TazerGlyph, Add, Calendar, Down, Edit, Next, Previous, Settings (+3 more)
-
-### Community 41 - "HTTP error envelope"
+### Community 48 - "Intent"
 Cohesion: 0.25
 Nodes (7): Android client, Supabase and providers, Tazer backend, public.account_entitlements, public.analysis_usage, public.tazer_entitlement(), tazer-db
 
-### Community 43 - "HTTP error envelope"
+### Community 50 - "build.gradle.kts"
 Cohesion: 0.22
 Nodes (9): Analyzer, Autentikasi dan endpoint HTTP, Envelope error, GEMINI_MODEL, GET /health, Health readiness (ready), Kontrak data dan API, SUPABASE_PUBLISHABLE_KEY (+1 more)
 
-### Community 44 - "instant"
-Cohesion: 0.29
-Nodes (7): WorkSessionState, CANCELLED, DONE, EXTENDED, OVERTIME, PENDING, RUNNING
+### Community 51 - "AuthPkce.kt"
+Cohesion: 0.25
+Nodes (8): WorkSessionState, CANCELLED, DONE, EXTENDED, OVERTIME, PAUSED, PENDING, RUNNING
 
-### Community 45 - "tazer-v1.sql"
+### Community 52 - "DateTimeButtons.kt"
 Cohesion: 0.29
 Nodes (7): FocusEventKind, ACTIVE, CUTOFF, DONE, EXTEND, REMINDER, START_ALARM
 
-### Community 46 - "Subscription"
-Cohesion: 0.54
-Nodes (5): AccountSettings(), ByokForm(), LoginScreen(), SecretField(), TazerState
-
-### Community 47 - ".readLink()"
+### Community 53 - "CalendarDao"
 Cohesion: 0.29
 Nodes (7): AI_UNAVAILABLE, EMAIL_UNVERIFIED, HTTP error envelope, INVALID_AUTH, PRO_REQUIRED, QUOTA_EXHAUSTED, VERIFICATION_UNAVAILABLE
 
-### Community 51 - "AuthPkce.kt"
-Cohesion: 0.19
-Nodes (7): AuthFlow, GOOGLE, RECOVERY, SIGN_UP, AuthPkce, isAuthCallback(), PendingAuth
-
 ## Knowledge Gaps
-- **92 isolated node(s):** `PasswordRecovery`, `AI`, `OFFLINE`, `BREAK`, `ROUTINE` (+87 more)
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 300 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
-- **58 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **95 isolated node(s):** `PasswordRecovery`, `Add`, `Calendar`, `Down`, `Edit` (+90 more)
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 336 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **64 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `FixedSchedule` connect `TazerViewModel` to `AndroidIntegration`, `handler.ts`, `TazerDao`, `Spesifikasi scheduler dan timer`, `Notification`?**
-  _High betweenness centrality (0.142) - this node is a cross-community bridge._
+- **Why does `FixedSchedule` connect `AndroidIntegration` to `TaskRepository`, `SchedulerTest`, `Spesifikasi scheduler dan timer`, `tazer-v1.sql`, `FocusEvent`, `TazerState`?**
+  _High betweenness centrality (0.119) - this node is a cross-community bridge._
 - **Are the 2 inferred relationships involving `WorkSession` (e.g. with `.migratesExportedV1AndPreservesExistingRows()` and `Room`) actually correct?**
   _`WorkSession` has 2 INFERRED edges - model-reasoned connections that need verification._
-- **What connects `PasswordRecovery`, `AI`, `OFFLINE` to the rest of the system?**
-  _92 weakly-connected nodes found - possible documentation gaps or missing edges._
+- **What connects `PasswordRecovery`, `Add`, `Calendar` to the rest of the system?**
+  _95 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `AndroidIntegration` be split into smaller, more focused modules?**
-  _Cohesion score 0.10382513661202186 - nodes in this community are weakly interconnected._
-- **Why does `Spesifikasi scheduler dan timer` connect `Notification` to `20261125000000_entitlement.sql`, `WorkspaceScreen`, `AndroidIntegrationTest.kt`?**
-  _High betweenness centrality (0.132) - this node is a cross-community bridge._
-- **Are the 2 inferred relationships involving `FocusRuntime` (e.g. with `FocusAlarms` and `FocusNotifications`) actually correct?**
-  _`FocusRuntime` has 2 INFERRED edges - model-reasoned connections that need verification._
-- **Should `TazerViewModel` be split into smaller, more focused modules?**
-  _Cohesion score 0.057297297297297295 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.07116104868913857 - nodes in this community are weakly interconnected._
+- **Why does `Spesifikasi scheduler dan timer` connect `TazerState` to `FocusNotifications`, `HTTP error envelope`, `FocusScreens.kt`?**
+  _High betweenness centrality (0.108) - this node is a cross-community bridge._
+- **Are the 3 inferred relationships involving `FocusMoment` (e.g. with `.pausedWorkIsFrozenAndResumeAddsOnlyTheNewSegment()` and `.restartUsesCheckpointAndOutOfOrderSamplesDoNotEraseIt()`) actually correct?**
+  _`FocusMoment` has 3 INFERRED edges - model-reasoned connections that need verification._
+- **Should `TazerDao` be split into smaller, more focused modules?**
+  _Cohesion score 0.061754385964912284 - nodes in this community are weakly interconnected._

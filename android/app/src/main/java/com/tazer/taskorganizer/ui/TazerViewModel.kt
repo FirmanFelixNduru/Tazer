@@ -219,8 +219,16 @@ class TazerViewModel(
         focus.extend(uid, session.id, session.revision, minutes)
     }
 
-    fun pauseFocus(session: WorkSession) = focusAction("Sesi tidak dapat dijeda.", closeWhenDone = true) { uid ->
+    fun pauseFocus(session: WorkSession) = focusAction("Sesi tidak dapat dijeda.") { uid ->
         focus.pause(uid, session.id, session.revision)
+    }
+
+    fun resumeFocus(session: WorkSession) = focusAction("Waktu sesi belum muat sebelum batas jadwal berikutnya.") { uid ->
+        focus.resume(uid, session.id, session.revision)
+    }
+
+    fun stopFocus(session: WorkSession) = focusAction("Sesi tidak dapat dihentikan.", closeWhenDone = true) { uid ->
+        focus.stop(uid, session.id, session.revision)
     }
 
     fun deferFocus(resumeAt: Long, onSaved: () -> Unit) = focusAction(
