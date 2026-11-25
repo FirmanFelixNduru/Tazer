@@ -193,8 +193,10 @@ class TaskRepository(private val database: TazerDatabase) {
             val profile = dao.findProfile(uid) ?: return@withTransaction null
             val rules = scheduleRules(uid)
             val breakBlock = breakReservation(uid, now.wallMs, now)
-            val durationMs = if (breakBlock == null && (profile.busyUntilAt ?: now.wallMs) <= now.wallMs) {
-                profile.focusDurationAt(now.wallMs, task, rules, session.plannedEndAt)
+            val durationMs = if (now.wallMs < session.plannedEndAt && breakBlock == null &&
+                (profile.busyUntilAt ?: now.wallMs) <= now.wallMs
+            ) {
+                profile.focusDurationAt(now.wallMs, task, rules, plannedMinutes = session.plannedMinutes)
             } else 0L
             if (durationMs == 0L) {
                 return@withTransaction FocusChange(null, applyPlan(profile, now.wallMs, rules, breakBlock))
@@ -202,7 +204,12 @@ class TaskRepository(private val database: TazerDatabase) {
             val running = session.startTimer(WorkSessionState.RUNNING, durationMs, now)
             saveFocus(session, running)
             check(dao.updateFocusTask(uid, task.id, task.remainingMinutes) == 1)
-            FocusChange(running)
+            val end = now.wallMs + durationMs
+            val plan = if (end != session.plannedEndAt) {
+                val reserved = TimeBlock(now.wallMs, end + Scheduler.BREAK_MS)
+                applyPlan(profile, now.wallMs, rules, reserved, running)
+            } else null
+            FocusChange(running, plan)
         }
 
     suspend fun checkFocus(uid: String, id: String, revision: Long, now: FocusMoment): FocusChange? =
@@ -360,11 +367,11 @@ class TaskRepository(private val database: TazerDatabase) {
         now: Long,
         task: Task,
         rules: List<ScheduleRule>,
-        slotEnd: Long? = null,
+        plannedMinutes: Int? = null,
         continuous: Long = 0L,
     ) = focusDurationMs(
         now, task.toSchedulingTask(), rules, ZoneId.of(zoneId), activeStartMinute, activeEndMinute,
-        slotEnd, continuous,
+        plannedMinutes, continuous,
     )
 
     private suspend fun breakReservation(uid: String, now: Long, moment: FocusMoment? = null): TimeBlock? {

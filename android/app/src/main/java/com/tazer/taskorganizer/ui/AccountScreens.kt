@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
@@ -19,6 +20,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -50,10 +52,16 @@ internal fun LoginScreen(model: TazerViewModel, state: TazerState, launch: (Inte
             Modifier.widthIn(max = 440.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(28.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("Tazer", style = MaterialTheme.typography.displayMedium, color = MaterialTheme.colorScheme.primary)
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer) {
+                    Box(Modifier.padding(9.dp)) { TazerIcon(TazerGlyph.Tasks) }
+                }
+                Text("Tazer", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
+            }
             Text(
                 if (state.recovery) "Atur kata sandi baru" else "Masuk",
-                style = MaterialTheme.typography.headlineSmall,
+                style = MaterialTheme.typography.headlineMedium,
                 modifier = Modifier.semantics { heading() },
             )
             if (state.recovery) {

@@ -14,14 +14,15 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryTabRow
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -107,7 +108,10 @@ internal fun TasksScreen(
         Tab(selected = !archived, onClick = { onTab(false) }, text = { Text("Belum Selesai") })
         Tab(selected = archived, onClick = { onTab(true) }, text = { Text("Selesai") })
     }
-    LazyColumn(contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 88.dp)) {
+    LazyColumn(
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 88.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
         if (tasks.isEmpty()) item {
             Text(
                 if (archived) "Belum ada tugas selesai." else "Belum ada tugas aktif. Ketuk Tambah tugas untuk memulai.",
@@ -117,7 +121,8 @@ internal fun TasksScreen(
         }
         items(tasks, key = { it.id }) { task ->
             val sessions = taskSessions[task.id].orEmpty()
-            Column(Modifier.fillMaxWidth().padding(vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Surface(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surfaceContainerLow, shape = MaterialTheme.shapes.large) {
+            Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(task.title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
                 Text(task.course, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (archived) {
@@ -130,8 +135,10 @@ internal fun TasksScreen(
                     if (task.deadlineAt <= state.now) {
                         Text("Lewat deadline", color = MaterialTheme.colorScheme.error)
                     }
-                    Text("Prioritas " + Scheduler.priorityScore(task.schedulingTask(), state.now) +
-                        " · Kesulitan " + task.difficultyScore + "/5")
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        TaskTag("Prioritas " + Scheduler.priorityScore(task.schedulingTask(), state.now), task.deadlineAt <= state.now)
+                        TaskTag("Kesulitan " + task.difficultyScore + "/5", false)
+                    }
                     Text("Estimasi awal " + task.initialEstimatedMinutes + " mnt · Sisa " + task.remainingMinutes + " mnt")
                     Text("Deadline " + formatDate(task.deadlineAt, zone))
                     val next = sessions.asSequence().filter {
@@ -152,7 +159,7 @@ internal fun TasksScreen(
                     TextButton(onClick = { deleteId = task.id }, enabled = !state.busy) { Text("Hapus") }
                 }
             }
-            HorizontalDivider()
+            }
         }
     }
     if (taskToDelete != null) AlertDialog(
@@ -181,6 +188,18 @@ internal fun TasksScreen(
             },
             dismissButton = { TextButton(onClick = { reopenId = null }) { Text("Batal") } },
         )
+    }
+}
+
+@Composable
+private fun TaskTag(label: String, overdue: Boolean) {
+    val colors = MaterialTheme.colorScheme
+    Surface(
+        shape = RoundedCornerShape(8.dp),
+        color = if (overdue) colors.errorContainer else colors.secondaryContainer,
+        contentColor = if (overdue) colors.onErrorContainer else colors.onSecondaryContainer,
+    ) {
+        Text(label, Modifier.padding(horizontal = 9.dp, vertical = 4.dp), style = MaterialTheme.typography.labelMedium)
     }
 }
 

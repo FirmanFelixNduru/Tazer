@@ -54,7 +54,7 @@ internal fun focusDurationMs(
     zone: ZoneId,
     activeStart: Int,
     activeEnd: Int,
-    slotEnd: Long? = null,
+    plannedMinutes: Int? = null,
     continuousWorkMs: Long = 0L,
 ): Long {
     val day = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
@@ -67,11 +67,14 @@ internal fun focusDurationMs(
         .filter { it.endAt > now }
         .minOfOrNull { it.startAt } ?: Long.MAX_VALUE
     val deadline = task.deadlineAt.takeIf { it > now } ?: Long.MAX_VALUE
-    val endAt = minOf(activeEndAt, nextFixedAt, slotEnd ?: Long.MAX_VALUE, deadline)
+    val endAt = minOf(activeEndAt, nextFixedAt, deadline)
     if (endAt <= now || continuousWorkMs >= MAX_FOCUS * MINUTE_MS) return 0L
     val availableMs = minOf(endAt - now, MAX_FOCUS * MINUTE_MS - continuousWorkMs)
-    // Starting an existing slot tolerates up to one partial minute without moving its cutoff.
-    val availableMinutes = if (slotEnd != null) (availableMs + MINUTE_MS - 1) / MINUTE_MS else availableMs / MINUTE_MS
-    val legalMinutes = Scheduler.chunkMinutes(task.remainingMinutes, availableMinutes.toInt())
-    return minOf(legalMinutes * MINUTE_MS, availableMs)
+    if (plannedMinutes != null) {
+        val plannedMs = plannedMinutes * MINUTE_MS
+        return if (plannedMinutes in 1..minOf(MAX_FOCUS, task.remainingMinutes) && plannedMs <= availableMs) {
+            plannedMs
+        } else 0L
+    }
+    return Scheduler.chunkMinutes(task.remainingMinutes, (availableMs / MINUTE_MS).toInt()) * MINUTE_MS
 }

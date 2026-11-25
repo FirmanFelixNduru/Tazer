@@ -108,7 +108,7 @@ flowchart TD
 
 | Kejadian | Mutasi dalam Room |
 | --- | --- |
-| Mulai sesi | Hanya dari `PENDING` pada slot legal dengan UID aktif. Set sesi `RUNNING`, Task `IN_PROGRESS`, waktu start, dan cutoff. Jika mulai terlambat, jangan melewati akhir slot rencana. Replan jika durasi legal sudah tidak cukup. |
+| Mulai sesi | Terima `PENDING` dalam jendela mula dengan UID dan revisi yang valid. Tetapkan `RUNNING`, Task `IN_PROGRESS`, dan cutoff monotonic dari ketukan aktual ditambah `plannedMinutes` penuh. Jika akhir aktual bergeser, susun ulang sesi pending dengan reservasi durasi fokus dan jeda. Jika jendela kedaluwarsa atau durasi penuh menabrak jadwal tetap, akhir jam aktif, atau deadline yang masih akan datang, susun ulang tanpa memulai timer. |
 | Batas kerja | Jadikan `OVERTIME` dengan cutoff asli. Simpan status sekali. Timer menampilkan waktu sejak cutoff selama user belum merespons. |
 | Konfirmasi belum selesai | Tutup sesi sumber sebagai `DONE` dengan aktual. Task tetap terbuka. Jalankan Smart Shift, dan buat sesi `EXTENDED` baru atau sesi `PENDING` berikutnya. |
 | Konfirmasi selesai | Tutup sesi aktif sebagai `DONE` bila ada. Task `DONE`, sisa 0, simpan `completedAt`, batalkan sesi pending task, dan sarankan sesi berikutnya. User memulai timer berikutnya. |

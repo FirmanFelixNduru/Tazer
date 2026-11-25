@@ -1,5 +1,22 @@
 package com.tazer.taskorganizer.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Surface
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextOverflow
+import java.time.YearMonth
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -47,7 +64,7 @@ import java.time.format.TextStyle
 
 private data class TimelineRow(
     val id: String, val title: String, val kind: String, val start: Long, val end: Long,
-    val session: WorkSession? = null,
+    val session: WorkSession? = null, val course: String? = null, val description: String? = null,
 )
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -59,7 +76,8 @@ internal fun TimelineScreen(
     val today = localDate(state.now, zone)
     val start = day.atStartOfDay(zone).toInstant().toEpochMilli()
     val end = day.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
-    val rows = remember(workspace, day, zone) {
+    val weekStart = day.minusDays((day.dayOfWeek.value - 1).toLong())
+    val rows = remember(workspace, day, zone, today) {
         val fixedById = workspace.fixed.associateBy { it.id }
         val tasksById = workspace.tasks.associateBy { it.id }
         val rules = workspace.fixed.map { ScheduleRule(it.id, it.label, it.dayOfWeek, it.startMinute, it.endMinute) }
@@ -68,17 +86,54 @@ internal fun TimelineScreen(
             TimelineRow("fixed-" + rule.id, rule.label, kind, block.startAt, block.endAt)
         }
         val workRows = workspace.sessions.asSequence().filter {
-            it.state == WorkSessionState.PENDING && it.plannedStartAt < end && it.plannedEndAt > start
+            (it.state == WorkSessionState.PENDING || it.state in ActiveFocusStates) &&
+                (it.plannedStartAt < end && it.plannedEndAt > start || it.state in ActiveFocusStates && day == today)
         }.mapNotNull { session ->
             val task = tasksById[session.taskId] ?: return@mapNotNull null
-            TimelineRow("work-" + session.id, task.title, "Sesi fokus", session.plannedStartAt, session.plannedEndAt, session)
+            val startAt = session.startedAt ?: session.plannedStartAt
+            val duration = (session.cutoffElapsedMs ?: 0L) - (session.activeSinceElapsedMs ?: 0L)
+            val endAt = if (duration > 0) startAt + duration else session.plannedEndAt
+            TimelineRow("work-" + session.id, task.title, "Sesi fokus", startAt, endAt, session, task.course, task.description)
         }.toList()
         (fixedRows + workRows).sortedWith(compareBy<TimelineRow> { it.start }.thenBy { it.id })
     }
     LazyColumn(contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp)) {
         item {
-            workspace.sessions.firstOrNull { it.state in ActiveFocusStates }?.let { active ->
-                TextButton(onClick = { openFocus(active) }) { Text("Buka timer aktif") }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                MonthPicker(YearMonth.from(day)) { month -> selectDay(month.atDay(day.dayOfMonth.coerceAtMost(month.lengthOfMonth()))) }
+                TextButton(onClick = { selectDay(today) }) { Text("Hari Ini") }
+            }
+            var drag by remember { mutableStateOf(0f) }
+            Row(
+                Modifier.fillMaxWidth().padding(vertical = 12.dp).pointerInput(weekStart) {
+                    detectHorizontalDragGestures(onDragEnd = {
+                        if (drag > 60f) selectDay(day.minusWeeks(1)) else if (drag < -60f) selectDay(day.plusWeeks(1))
+                        drag = 0f
+                    }, onHorizontalDrag = { _, amount -> drag += amount })
+                }, horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                (0L..6L).forEach { offset ->
+                    val date = weekStart.plusDays(offset)
+                    val isSelected = date == day
+                    Surface(
+                        modifier = Modifier.weight(1f).padding(horizontal = 2.dp).semantics {
+                            contentDescription = DayFormat.format(date)
+                            selected = isSelected
+                        }.clickable { selectDay(date) },
+                        shape = RoundedCornerShape(14.dp),
+                        color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                        contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                    ) {
+                        Column(Modifier.padding(vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(date.dayOfWeek.getDisplayName(TextStyle.SHORT, Indonesian), style = MaterialTheme.typography.labelMedium, maxLines = 1)
+                            Text(date.dayOfMonth.toString(), style = MaterialTheme.typography.titleMedium)
+                        }
+                    }
+                }
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                TextButton(onClick = { selectDay(day.minusWeeks(1)) }) { Text("Pekan sebelumnya") }
+                TextButton(onClick = { selectDay(day.plusWeeks(1)) }) { Text("Pekan berikutnya") }
             }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 TextButton(onClick = defer, enabled = !state.busy) { Text("Saya lagi sibuk") }
@@ -86,36 +141,87 @@ internal fun TimelineScreen(
             }
             if (state.risks.isNotEmpty()) Text(
                 "Risiko lewat deadline pada ${state.risks.size} tugas. Lihat tab Belum Selesai.",
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(bottom = 12.dp),
+                color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(vertical = 8.dp),
             )
-            Text(DayFormat.format(day), modifier = Modifier.semantics { heading() }, style = MaterialTheme.typography.titleLarge)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                TextButton(onClick = { selectDay(day.minusDays(1)) }) { Text("Sebelumnya") }
-                TextButton(onClick = { selectDay(today) }) { Text("Hari ini") }
-                TextButton(onClick = { selectDay(day.plusDays(1)) }) { Text("Berikutnya") }
+            if (day > today.plusDays(6)) Text("Sesi fokus direncanakan hingga tujuh hari ke depan.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 12.dp)) {
+                Text("Jam", Modifier.width(68.dp), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Jadwal", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            if (day > today.plusDays(6)) Text(
-                "Sesi fokus direncanakan hingga tujuh hari ke depan.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            HorizontalDivider()
         }
         if (rows.isEmpty()) item {
-            Text("Tidak ada blok jadwal hari ini.", modifier = Modifier.padding(vertical = 20.dp))
+            Text("Tidak ada blok jadwal pada tanggal ini.", modifier = Modifier.padding(vertical = 24.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         items(rows, key = { it.id }) { row ->
-            Column(Modifier.fillMaxWidth().padding(vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                val starts = formatTime(maxOf(row.start, start), zone)
-                val ends = if (row.end >= end) "24:00" else formatTime(row.end, zone)
-                Text(starts + "–" + ends + " · " + row.kind, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
-                Text(row.title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
-                if (day == today && row.session != null && row.end > state.now) {
-                    TextButton(onClick = { openFocus(row.session) }) { Text("Buka timer") }
+            TimelineEntry(row, start, end, state.now, zone, day == today, openFocus)
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TimelineEntry(row: TimelineRow, start: Long, end: Long, now: Long, zone: ZoneId, isToday: Boolean, openFocus: (WorkSession) -> Unit) {
+    val active = row.session?.state in ActiveFocusStates
+    val overtime = row.session?.state == WorkSessionState.OVERTIME
+    val status = when {
+        overtime -> "Waktu rencana habis ? lembur"
+        active -> "Sedang fokus"
+        row.start > now -> {
+            val minutes = ((row.start - now + 59_999) / 60_000)
+            if (minutes >= 60) "Dimulai dalam ${minutes / 60} jam ${minutes % 60} menit" else "Dimulai dalam $minutes menit"
+        }
+        row.end > now -> "Sedang berlangsung"
+        row.session != null -> "Waktu sesi terlewat"
+        else -> "Jadwal berakhir"
+    }
+    Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), verticalAlignment = Alignment.Top) {
+        Column(Modifier.width(68.dp).padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(formatTime(maxOf(row.start, start), zone), style = MaterialTheme.typography.labelLarge)
+            Text(if (row.end >= end) "24:00" else formatTime(row.end, zone), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Box(Modifier.padding(end = 10.dp).width(1.dp).height(100.dp).background(MaterialTheme.colorScheme.outlineVariant))
+        Surface(Modifier.weight(1f), shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+            Column {
+                val colors = MaterialTheme.colorScheme
+                val banner = when {
+                    overtime -> colors.tertiaryContainer
+                    active -> colors.primaryContainer
+                    else -> colors.secondaryContainer
+                }
+                val bannerText = when {
+                    overtime -> colors.onTertiaryContainer
+                    active -> colors.onPrimaryContainer
+                    else -> colors.onSecondaryContainer
+                }
+                Text(status, Modifier.fillMaxWidth().background(banner).padding(horizontal = 16.dp, vertical = 10.dp), color = bannerText, style = MaterialTheme.typography.labelLarge)
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(row.title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f).semantics { heading() })
+                        if (row.session != null && (active || isToday && row.end > now)) {
+                            IconButton(onClick = { openFocus(row.session) }) {
+                                TazerIcon(TazerGlyph.Timer, if (active) "Buka timer aktif" else "Buka timer")
+                            }
+                        }
+                    }
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        ScheduleTag(row.kind)
+                        row.course?.takeIf { it.isNotBlank() }?.let { ScheduleTag(it) }
+                        ScheduleTag("${((row.end - row.start) / 60_000).coerceAtLeast(1)} menit")
+                    }
+                    row.description?.takeIf { it.isNotBlank() }?.let {
+                        Text(it, style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant,
+                            maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    }
                 }
             }
-            HorizontalDivider()
         }
+    }
+}
+
+@Composable
+private fun ScheduleTag(label: String) {
+    Surface(shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.surfaceContainerHighest) {
+        Text(label, Modifier.padding(horizontal = 10.dp, vertical = 5.dp), style = MaterialTheme.typography.labelMedium)
     }
 }
 
@@ -135,15 +241,17 @@ internal fun SettingsScreen(workspace: Workspace, state: TazerState, model: Taze
             TextButton(onClick = { editId = "" }, enabled = !state.busy) { Text("Tambah jadwal tetap") }
         }
         items(workspace.fixed.sortedWith(compareBy<FixedSchedule> { it.dayOfWeek }.thenBy { it.startMinute }), key = { it.id }) { block ->
-            Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-                Text(block.label, style = MaterialTheme.typography.titleMedium)
-                Text(dayName(block.dayOfWeek) + " · " + formatMinute(block.startMinute) + "–" + formatMinute(block.endMinute))
-                FlowRow {
-                    TextButton(onClick = { editId = block.id }, enabled = !state.busy) { Text("Edit jadwal") }
-                    TextButton(onClick = { deleteId = block.id }, enabled = !state.busy) { Text("Hapus jadwal") }
+            Surface(Modifier.fillMaxWidth().padding(vertical = 6.dp), shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(block.label, style = MaterialTheme.typography.titleMedium)
+                    Text(dayName(block.dayOfWeek) + " · " + formatMinute(block.startMinute) + "–" + formatMinute(block.endMinute), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    ScheduleTag(if (block.kind == FixedScheduleKind.BREAK) "Istirahat" else "Rutinitas / kuliah")
+                    FlowRow {
+                        TextButton(onClick = { editId = block.id }, enabled = !state.busy) { Text("Edit jadwal") }
+                        TextButton(onClick = { deleteId = block.id }, enabled = !state.busy) { Text("Hapus jadwal") }
+                    }
                 }
             }
-            HorizontalDivider()
         }
         item {
             AccountSettings(state, model, Modifier.padding(top = 24.dp, bottom = 16.dp))
@@ -172,6 +280,7 @@ private fun ProfileForm(profile: UserProfile, busy: Boolean, model: TazerViewMod
     val validRange = parsedStart != null && parsedEnd != null && parsedStart < parsedEnd
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("Jam aktif", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
+        Text("Atur waktu yang tersedia untuk sesi fokus.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         TimeField(start, { start = it }, "Mulai", busy)
         TimeField(end, { end = it }, "Selesai", busy)
         OutlinedTextField(zone, { zone = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Zona waktu") },

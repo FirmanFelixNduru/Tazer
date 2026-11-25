@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
@@ -20,6 +21,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -33,6 +35,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -40,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import com.tazer.taskorganizer.data.Task
 import com.tazer.taskorganizer.data.WorkSession
 import com.tazer.taskorganizer.data.WorkSessionState
+import com.tazer.taskorganizer.domain.FocusMoment
 import com.tazer.taskorganizer.timer.FocusRuntime
 import java.time.Instant
 import java.time.LocalDate
@@ -48,6 +52,31 @@ import java.util.Locale
 import kotlinx.coroutines.delay
 
 internal val ActiveFocusStates = setOf(WorkSessionState.RUNNING, WorkSessionState.OVERTIME, WorkSessionState.EXTENDED)
+
+@Composable
+internal fun focusClock(runtime: FocusRuntime, sessionId: String): FocusMoment {
+    val clock by produceState(runtime.now(), sessionId) {
+        while (true) {
+            value = runtime.now()
+            delay(250)
+        }
+    }
+    return clock
+}
+
+internal fun WorkSession.isOvertime(clock: FocusMoment): Boolean =
+    state == WorkSessionState.OVERTIME ||
+        (state in ActiveFocusStates && timerBootId == clock.bootId && cutoffElapsedMs?.let { clock.elapsedMs >= it } == true)
+
+internal fun WorkSession.timerText(clock: FocusMoment, overtime: Boolean): String {
+    val cutoff = cutoffElapsedMs
+    val duration = when {
+        timerBootId != clock.bootId || cutoff == null -> if (overtime) 0L else plannedMinutes * 60_000L
+        overtime -> (clock.elapsedMs - cutoff).coerceAtLeast(0)
+        else -> (cutoff - clock.elapsedMs).coerceAtLeast(0)
+    }
+    return (if (overtime) "+" else "") + formatTimer(duration, overtime)
+}
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -61,23 +90,10 @@ internal fun FocusScreen(
     permissions: () -> Unit,
     defer: () -> Unit,
 ) {
-    val clock by produceState(model.focus.now(), session.id) {
-        while (true) {
-            value = model.focus.now()
-            delay(500)
-        }
-    }
-    val cutoff = session.cutoffElapsedMs
-    val validClock = session.timerBootId == clock.bootId && cutoff != null
+    val clock = focusClock(model.focus, session.id)
+    val validClock = session.timerBootId == clock.bootId && session.cutoffElapsedMs != null
     val active = session.state in ActiveFocusStates
-    val overtime = session.state == WorkSessionState.OVERTIME || (active && validClock && clock.elapsedMs >= requireNotNull(cutoff))
-    val displayMs = if (!validClock) {
-        session.plannedMinutes * 60_000L
-    } else if (overtime) {
-        (clock.elapsedMs - requireNotNull(cutoff)).coerceAtLeast(0)
-    } else {
-        (requireNotNull(cutoff) - clock.elapsedMs).coerceAtLeast(0)
-    }
+    val overtime = session.isOvertime(clock)
     val canStart = session.state == WorkSessionState.PENDING && clock.wallMs in session.plannedStartAt..<session.plannedEndAt
     var decision by rememberSaveable(session.id, session.revision, target.requestExtension) {
         mutableStateOf(
@@ -97,22 +113,30 @@ internal fun FocusScreen(
     ) {
         Text(task.title, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
         Text(task.course, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(
-            when (session.state) {
+        val status = when (session.state) {
                 WorkSessionState.PENDING -> "Sesi terjadwal"
                 WorkSessionState.DONE -> "Sesi ditutup"
                 WorkSessionState.CANCELLED -> "Jadwal sesi telah berubah"
                 else -> if (overtime) "Lembur" else "Sedang fokus"
-            },
-            style = MaterialTheme.typography.titleMedium,
-            color = if (overtime) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
-        )
-        if (active || session.state == WorkSessionState.PENDING) {
-            Text(
-                (if (overtime) "+" else "") + formatTimer(displayMs, overtime),
-                style = MaterialTheme.typography.displayMedium.copy(fontFeatureSettings = "tnum"),
-            )
         }
+        val colors = MaterialTheme.colorScheme
+        if (active || session.state == WorkSessionState.PENDING) {
+            Surface(
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp),
+                color = if (overtime) colors.tertiaryContainer else colors.surfaceContainer,
+                contentColor = if (overtime) colors.onTertiaryContainer else colors.onSurface,
+                shape = MaterialTheme.shapes.large,
+            ) {
+                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TazerIcon(TazerGlyph.Timer)
+                        Text(status, style = MaterialTheme.typography.titleMedium)
+                    }
+                    Text(session.timerText(clock, overtime),
+                        style = MaterialTheme.typography.displayMedium.copy(fontFeatureSettings = "tnum"))
+                }
+            }
+        } else Text(status, style = MaterialTheme.typography.titleMedium, color = colors.onSurfaceVariant)
         Text(formatDate(session.plannedStartAt, zone) + " – " + formatTime(session.plannedEndAt, zone))
         if (session.state == WorkSessionState.PENDING) {
             Button(onClick = { model.startFocus(session) }, enabled = canStart && !state.busy) { Text("Mulai sesi") }

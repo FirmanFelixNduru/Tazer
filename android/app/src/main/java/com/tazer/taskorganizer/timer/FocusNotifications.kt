@@ -85,12 +85,15 @@ internal class FocusNotifications(
 
     fun showReminder(session: WorkSession, now: Long): Boolean {
         if (!remindersEnabled()) return false
-        return post(REMINDER_ID, notification(REMINDERS, "Waktunya fokus", "Buka jadwal untuk mulai")
+        return post(REMINDER_ID, reminderNotification(session, now))
+    }
+
+    fun reminderNotification(session: WorkSession, now: Long): Notification =
+        notification(REMINDERS, "Waktunya fokus", "Buka jadwal untuk mulai")
             .setTimeoutAfter(session.plannedEndAt - now)
             .setContentIntent(open(FocusEvent(session, FocusEventKind.REMINDER)))
             .setAutoCancel(true)
-            .build())
-    }
+            .build()
 
     fun showInterrupted() {
         if (!canPost(REMINDERS)) return

@@ -5,6 +5,8 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.tazer.taskorganizer.data.AnalysisSource
+import com.tazer.taskorganizer.data.CalendarEvent
+import com.tazer.taskorganizer.data.CalendarRepository
 import com.tazer.taskorganizer.data.FixedSchedule
 import com.tazer.taskorganizer.data.FixedScheduleKind
 import com.tazer.taskorganizer.data.FocusChange
@@ -45,6 +47,7 @@ data class Workspace(
     val tasks: List<Task>,
     val fixed: List<FixedSchedule>,
     val sessions: List<WorkSession>,
+    val events: List<CalendarEvent>,
 )
 
 data class TazerState(
@@ -78,6 +81,7 @@ enum class AnalyzerMode { OFFLINE, CLOUD, BYOK }
 
 class TazerViewModel(
     private val repository: TaskRepository,
+    private val calendar: CalendarRepository,
     private val integration: AndroidIntegration,
     val focus: FocusRuntime,
     val demoAvailable: Boolean,
@@ -90,6 +94,21 @@ class TazerViewModel(
     private var ownerJob: Job? = null
     private var restored = false
     private var pendingFocusLink: FocusLink? = null
+
+    fun saveEvent(
+        id: String?, title: String, from: Long, through: Long, minute: Int?, description: String,
+        onSaved: () -> Unit,
+    ) = runAction {
+        val uid = _state.value.uid ?: return@runAction
+        if (calendar.saveEvent(uid, id, title, from, through, minute, description)) onSaved()
+        else showMessage("Acara sudah berubah. Buka ulang kalender.")
+    }
+
+    fun deleteEvent(id: String, onDeleted: () -> Unit) = runAction {
+        val uid = _state.value.uid ?: return@runAction
+        if (!calendar.deleteEvent(uid, id)) showMessage("Acara sudah dihapus.")
+        onDeleted()
+    }
 
     fun openDemo() = runAction { enter(DEMO_UID, null, true) }
     fun signIn(email: String, password: String) = runAction { enter(integration.signIn(email, password)) }
@@ -189,6 +208,7 @@ class TazerViewModel(
 
     fun startFocus(session: WorkSession) = focusAction("Mulai sesi tidak tersedia. Periksa jadwal terbaru.") { uid ->
         focus.start(uid, session.id, session.revision)
+            .also { if (it?.active == null && it?.plan != null) showMessage("Sesi dipindahkan. Buka Jadwal untuk melihat waktu baru.") }
     }
 
     fun finishFocus(session: WorkSession) = focusAction("Sesi sudah berubah. Periksa status terbaru.", closeWhenDone = true) { uid ->
@@ -355,9 +375,9 @@ class TazerViewModel(
             launch {
                 combine(
                     repository.observeProfile(uid), repository.observeTasks(uid),
-                    repository.observeFixedSchedules(uid), repository.observeWorkSessions(uid),
-                ) { profile, tasks, fixed, sessions ->
-                    profile?.let { Workspace(it, tasks, fixed, sessions) }
+                    repository.observeFixedSchedules(uid), repository.observeWorkSessions(uid), calendar.observeEvents(uid),
+                ) { profile, tasks, fixed, sessions, events ->
+                    profile?.let { Workspace(it, tasks, fixed, sessions, events) }
                 }.collect { snapshot ->
                     _state.update { if (it.uid == uid) it.copy(data = snapshot) else it }
                 }

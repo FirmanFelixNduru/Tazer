@@ -71,20 +71,27 @@ class FocusTest {
     }
 
     @Test
-    fun lateStartsKeepExactCutoffAndTolerateOnlyAPartialMinute() {
-        val cutoff = wall("09:50")
-        assertEquals(minutes(25) - 1, focusDurationMs(start + 1, task, emptyList(), zone, 480, 720, slotEnd = cutoff))
-        assertEquals(0L, focusDurationMs(start + minutes(1), task, emptyList(), zone, 480, 720, slotEnd = cutoff))
+    fun lateStartsUseTheWholePlannedDurationIncludingShortTails() {
+        assertEquals(minutes(25), focusDurationMs(start + 1, task, emptyList(), zone, 480, 720, plannedMinutes = 25))
+        assertEquals(minutes(25), focusDurationMs(start + minutes(2), task, emptyList(), zone, 480, 720, plannedMinutes = 25))
         val shortTail = task.copy(remainingMinutes = 1)
-        assertEquals(minutes(1) - 1, focusDurationMs(start + 1, shortTail, emptyList(), zone, 480, 720,
-            slotEnd = start + minutes(1)))
-        assertEquals(0L, focusDurationMs(start + minutes(1), shortTail, emptyList(), zone, 480, 720,
-            slotEnd = start + minutes(1)))
+        assertEquals(minutes(1), focusDurationMs(start + 1, shortTail, emptyList(), zone, 480, 720, plannedMinutes = 1))
+        assertEquals(0L, focusDurationMs(start, shortTail, emptyList(), zone, 480, 720, plannedMinutes = 2))
+        assertEquals(minutes(25), focusDurationMs(start, task, emptyList(), zone, 480, 720, plannedMinutes = 25))
+    }
+
+    @Test
+    fun plannedStartRequiresTheEntireDurationBeforeEveryHardBoundary() {
         val classBlock = ScheduleRule("class", "Kuliah", 1, 590, 660)
-        assertEquals(minutes(25) - 1, focusDurationMs(start + 1, task, listOf(classBlock), zone, 480, 720,
-            slotEnd = wall("11:00")))
-        assertEquals(minutes(25) - 1, focusDurationMs(start + 1, task.copy(deadlineAt = cutoff), emptyList(),
-            zone, 480, 720, slotEnd = wall("11:00")))
+        val dueTask = task.copy(deadlineAt = wall("09:50"))
+        assertEquals(minutes(25), focusDurationMs(start, task, listOf(classBlock), zone, 480, 720, plannedMinutes = 25))
+        assertEquals(0L, focusDurationMs(start + 1, task, listOf(classBlock), zone, 480, 720, plannedMinutes = 25))
+        assertEquals(0L, focusDurationMs(start + 1, task, emptyList(), zone, 480, 590, plannedMinutes = 25))
+        assertEquals(0L, focusDurationMs(start + 1, dueTask, emptyList(), zone, 480, 720, plannedMinutes = 25))
+        assertEquals(minutes(25), focusDurationMs(dueTask.deadlineAt, dueTask, emptyList(), zone, 480, 720,
+            plannedMinutes = 25))
+        assertEquals(0L, focusDurationMs(start, task.copy(remainingMinutes = 60), emptyList(), zone, 480, 720,
+            plannedMinutes = 51))
     }
 
     @Test
@@ -92,8 +99,7 @@ class FocusTest {
         val twenty = task.copy(remainingMinutes = 20)
         assertEquals(minutes(20), focusDurationMs(start, twenty, emptyList(), zone, 480, 720, continuousWorkMs = minutes(30)))
         assertEquals(0L, focusDurationMs(start, twenty, emptyList(), zone, 480, 720, continuousWorkMs = minutes(30) + 1))
-        assertEquals(minutes(30), focusDurationMs(start, task.copy(remainingMinutes = 55), emptyList(), zone, 480, 720,
-            slotEnd = start + minutes(40)))
+        assertEquals(minutes(30), focusDurationMs(start, task.copy(remainingMinutes = 55), emptyList(), zone, 480, 605))
     }
 
     private fun wall(time: String) = Instant.parse("2026-11-23T$time:00+07:00").toEpochMilli()

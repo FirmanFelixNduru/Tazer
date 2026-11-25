@@ -13,6 +13,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import com.tazer.taskorganizer.data.CalendarRepository
 import com.tazer.taskorganizer.data.TaskRepository
 import com.tazer.taskorganizer.data.TazerDatabase
 import com.tazer.taskorganizer.integration.AndroidIntegration
@@ -37,7 +38,8 @@ class MainActivity : ComponentActivity() {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
                 val database = TazerDatabase.getInstance(applicationContext)
-                return TazerViewModel(TaskRepository(database), AndroidIntegration(applicationContext), focus, BuildConfig.DEBUG) as T
+                return TazerViewModel(TaskRepository(database), CalendarRepository(database),
+                    AndroidIntegration(applicationContext), focus, BuildConfig.DEBUG) as T
             }
         }
         model = ViewModelProvider(this, factory)[TazerViewModel::class.java]

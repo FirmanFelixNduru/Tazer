@@ -95,3 +95,23 @@ data class WorkSession(
     val lastObservedWorkMs: Long?,
     val revision: Long,
 )
+
+/** Start and end are inclusive civil dates. A null start minute represents an all-day event. */
+@Entity(
+    foreignKeys = [ForeignKey(
+        entity = UserProfile::class,
+        parentColumns = ["ownerUid"],
+        childColumns = ["ownerUid"],
+        onDelete = ForeignKey.CASCADE,
+    )],
+    indices = [Index(value = ["ownerUid", "startEpochDay"])],
+)
+data class CalendarEvent(
+    @PrimaryKey val id: String,
+    val ownerUid: String,
+    val title: String,
+    val startEpochDay: Long,
+    val endEpochDay: Long,
+    val startMinute: Int?,
+    val description: String,
+)

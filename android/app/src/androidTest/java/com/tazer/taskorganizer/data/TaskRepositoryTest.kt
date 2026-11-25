@@ -342,29 +342,29 @@ class TaskRepositoryTest {
     }
 
     @Test
-    fun aLateStartShortensCutoffOrReplansWhenTheRemainingSlotIsTooShort() = runBlocking {
+    fun aLateStartKeepsFullDurationAndAnExpiredSlotReplans() = runBlocking {
         val task = addFocusTask("alice")
         val pending = draft(task, "09:00", 40)
         val running = repository.startFocus("alice", pending.id, pending.revision, focusMoment("09:10", 60))!!.active!!
-        assertEquals(minutes(90), running.cutoffElapsedMs)
+        assertEquals(minutes(100), running.cutoffElapsedMs)
         assertEquals(wall("09:40"), running.plannedEndAt)
         repository.pauseFocus("alice", running.id, running.revision, focusMoment("09:11", 61))
-        val short = draft(task, "09:30", 25)
-        val retry = repository.startFocus("alice", short.id, short.revision, focusMoment("09:35", 85))!!
+        val expired = draft(task, "09:30", 25)
+        val retry = repository.startFocus("alice", expired.id, expired.revision, focusMoment("09:55", 105))!!
         assertNull(retry.active)
-        assertTrue(retry.plan!!.sessions.all { it.startAt >= wall("09:35") })
-        assertEquals(WorkSessionState.CANCELLED, repository.focusSession("alice", short.id)?.state)
+        assertTrue(retry.plan!!.sessions.all { it.startAt >= wall("09:55") })
+        assertEquals(WorkSessionState.CANCELLED, repository.focusSession("alice", expired.id)?.state)
     }
 
     @Test
-    fun startingOneMillisecondLateKeepsOriginalCutoffForMinimumAndShortSlots() = runBlocking {
+    fun startingOneMillisecondLateKeepsFullDurationForMinimumAndShortSlots() = runBlocking {
         for ((uid, amount) in listOf("alice" to 25, "bob" to 1)) {
             val task = addFocusTask(uid, estimate = amount)
             val pending = draft(task, "09:00", amount)
             val start = FocusMoment(wall("09:00") + 1, minutes(60) + 1, "boot")
             val active = repository.startFocus(uid, pending.id, pending.revision, start)!!.active!!
-            assertEquals(minutes(60 + amount), active.cutoffElapsedMs)
-            val before = FocusMoment(pending.plannedEndAt - 1, minutes(60 + amount) - 1, "boot")
+            assertEquals(start.elapsedMs + minutes(amount), active.cutoffElapsedMs)
+            val before = FocusMoment(pending.plannedEndAt, minutes(60 + amount), "boot")
             assertEquals(WorkSessionState.RUNNING, repository.checkFocus(uid, active.id, active.revision, before)?.active?.state)
             val cutoff = before.copy(wallMs = before.wallMs + 1, elapsedMs = before.elapsedMs + 1)
             assertEquals(WorkSessionState.OVERTIME, repository.checkFocus(uid, active.id, active.revision, cutoff)?.active?.state)
