@@ -26,10 +26,10 @@ data class DeadlineRisk(val taskId: String, val missingMinutes: Int)
 data class SchedulePlan(val sessions: List<PlannedWork>, val risks: List<DeadlineRisk>)
 
 object Scheduler {
-    private const val MINUTE_MS = 60_000L
+    internal const val MINUTE_MS = 60_000L
     private const val MIN_FOCUS = 25
-    private const val MAX_FOCUS = 50
-    private const val BREAK_MS = 10 * MINUTE_MS
+    internal const val MAX_FOCUS = 50
+    internal const val BREAK_MS = 10 * MINUTE_MS
     private const val HORIZON_DAYS = 7L
 
     fun priorityScore(task: SchedulingTask, now: Long): Int {
@@ -83,7 +83,7 @@ object Scheduler {
         .sortedWith(compareBy({ it.second.startAt }, { it.second.endAt }, { it.first.id }))
         .toList()
 
-    private fun localBlock(day: LocalDate, zone: ZoneId, start: Int, end: Int): TimeBlock? {
+    internal fun localBlock(day: LocalDate, zone: ZoneId, start: Int, end: Int): TimeBlock? {
         if (start !in 0..<end || end > 1440) return null
         val midnight = day.atTime(0, 0)
         val startAt = midnight.plusMinutes(start.toLong()).atZone(zone).toInstant().toEpochMilli()
@@ -276,7 +276,7 @@ object Scheduler {
         return if (startAt < cutoff) ((cutoff - startAt) / MINUTE_MS).toInt() else 0
     }
 
-    private fun chunkMinutes(remaining: Int, available: Int): Int {
+    internal fun chunkMinutes(remaining: Int, available: Int): Int {
         val longest = minOf(remaining, available, MAX_FOCUS)
         if (longest < minOf(MIN_FOCUS, remaining)) return 0
         if (longest == remaining || remaining - longest >= MIN_FOCUS) return longest

@@ -7,10 +7,12 @@ import androidx.lifecycle.viewModelScope
 import com.tazer.taskorganizer.data.AnalysisSource
 import com.tazer.taskorganizer.data.FixedSchedule
 import com.tazer.taskorganizer.data.FixedScheduleKind
+import com.tazer.taskorganizer.data.FocusChange
 import com.tazer.taskorganizer.data.Task
 import com.tazer.taskorganizer.data.TaskRepository
 import com.tazer.taskorganizer.data.UserProfile
 import com.tazer.taskorganizer.data.WorkSession
+import com.tazer.taskorganizer.data.WorkSessionState
 import com.tazer.taskorganizer.domain.DeadlineRisk
 import com.tazer.taskorganizer.domain.OfflineAnalyzer
 import com.tazer.taskorganizer.integration.Account
@@ -22,6 +24,9 @@ import com.tazer.taskorganizer.integration.IntegrationException
 import com.tazer.taskorganizer.integration.Subscription
 import com.tazer.taskorganizer.integration.SubscriptionTier
 import com.tazer.taskorganizer.integration.TaskAnalysisInput
+import com.tazer.taskorganizer.timer.FocusLink
+import com.tazer.taskorganizer.timer.FocusLinkKind
+import com.tazer.taskorganizer.timer.FocusRuntime
 import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
@@ -48,11 +53,14 @@ data class TazerState(
     val subscription: Subscription? = null,
     val data: Workspace? = null,
     val risks: List<DeadlineRisk> = emptyList(),
+    val focusTarget: FocusTarget? = null,
     val now: Long = System.currentTimeMillis(),
     val recovery: Boolean = false,
     val busy: Boolean = false,
     val message: String? = null,
 )
+
+data class FocusTarget(val id: String, val requestExtension: Boolean = false)
 
 data class TaskInput(
     val title: String,
@@ -71,6 +79,7 @@ enum class AnalyzerMode { OFFLINE, CLOUD, BYOK }
 class TazerViewModel(
     private val repository: TaskRepository,
     private val integration: AndroidIntegration,
+    val focus: FocusRuntime,
     val demoAvailable: Boolean,
 ) : ViewModel() {
     private val _state = MutableStateFlow(TazerState())
@@ -80,6 +89,7 @@ class TazerViewModel(
 
     private var ownerJob: Job? = null
     private var restored = false
+    private var pendingFocusLink: FocusLink? = null
 
     fun openDemo() = runAction { enter(DEMO_UID, null, true) }
     fun signIn(email: String, password: String) = runAction { enter(integration.signIn(email, password)) }
@@ -128,10 +138,96 @@ class TazerViewModel(
     fun signOut() = runAction {
         ownerJob?.cancel()
         try {
-            integration.signOut()
+            _state.value.uid?.let { focus.deactivate(it) }
         } finally {
-            _state.value = TazerState()
+            try {
+                integration.signOut()
+            } finally {
+                pendingFocusLink = null
+                _state.value = TazerState()
+            }
         }
+    }
+
+    fun handleFocusLink(link: FocusLink) {
+        pendingFocusLink = link
+        val uid = _state.value.uid
+        when {
+            uid != null -> viewModelScope.launch { consumeFocusLink(uid) }
+            demoAvailable && link.uid == DEMO_UID -> openDemo()
+            else -> restoreSession()
+        }
+    }
+
+    private suspend fun consumeFocusLink(uid: String) {
+        val link = pendingFocusLink ?: return
+        pendingFocusLink = null
+        if (link.uid != uid || _state.value.uid != uid) return
+        val session = repository.focusSession(uid, link.id) ?: return
+        if (session.revision != link.revision || session.state in setOf(WorkSessionState.DONE, WorkSessionState.CANCELLED)) return
+        _state.update { if (it.uid == uid) it.copy(focusTarget = FocusTarget(session.id, link.kind == FocusLinkKind.EXTEND)) else it }
+    }
+
+    fun openFocus(session: WorkSession) {
+        _state.update { if (it.uid == session.ownerUid) it.copy(focusTarget = FocusTarget(session.id)) else it }
+    }
+
+    fun closeFocus() = _state.update { it.copy(focusTarget = null) }
+
+    fun refreshFocus() {
+        val uid = _state.value.uid ?: return
+        viewModelScope.launch {
+            try {
+                focus.sync(uid)
+            } catch (failure: CancellationException) {
+                throw failure
+            } catch (_: Exception) {
+                if (_state.value.uid == uid) showMessage("Pengingat sesi belum dapat diselaraskan.")
+            }
+        }
+    }
+
+    fun startFocus(session: WorkSession) = focusAction("Mulai sesi tidak tersedia. Periksa jadwal terbaru.") { uid ->
+        focus.start(uid, session.id, session.revision)
+    }
+
+    fun finishFocus(session: WorkSession) = focusAction("Sesi sudah berubah. Periksa status terbaru.", closeWhenDone = true) { uid ->
+        focus.done(uid, session.id, session.revision)
+    }
+
+    fun extendFocus(session: WorkSession, minutes: Int) = focusAction("Tambahan waktu belum dapat disimpan.", closeWhenDone = true) { uid ->
+        focus.extend(uid, session.id, session.revision, minutes)
+    }
+
+    fun pauseFocus(session: WorkSession) = focusAction("Sesi tidak dapat dijeda.", closeWhenDone = true) { uid ->
+        focus.pause(uid, session.id, session.revision)
+    }
+
+    fun deferFocus(resumeAt: Long, onSaved: () -> Unit) = focusAction(
+        "Jadwal belum dapat digeser. Pilih waktu mulai yang akan datang.", closeWhenDone = true, onSaved = onSaved,
+    ) { uid -> focus.defer(uid, resumeAt) }
+
+    private fun focusAction(
+        rejected: String,
+        closeWhenDone: Boolean = false,
+        onSaved: () -> Unit = {},
+        action: suspend (String) -> FocusChange?,
+    ) = runAction {
+        val uid = _state.value.uid ?: return@runAction
+        val result = action(uid)
+        if (result == null) {
+            showMessage(rejected)
+            focus.sync(uid)
+            return@runAction
+        }
+        _state.update { state ->
+            if (state.uid != uid) state else state.copy(
+                now = focus.now().wallMs,
+                risks = result.plan?.risks ?: state.risks,
+                focusTarget = result.active?.let { FocusTarget(it.id) } ?: state.focusTarget.takeUnless { closeWhenDone },
+            )
+        }
+        onSaved()
     }
 
     fun showMessage(message: String?) = _state.update { it.copy(message = message) }
@@ -197,8 +293,18 @@ class TazerViewModel(
     fun reportIntegrationFailure(failure: IntegrationException) {
         val message = failure.message ?: "Layanan sementara tidak tersedia."
         if (failure.code == IntegrationError.INVALID_AUTH && _state.value.uid != null && !_state.value.demo) {
+            val uid = requireNotNull(_state.value.uid)
             ownerJob?.cancel()
             _state.value = TazerState(message = message)
+            viewModelScope.launch {
+                try {
+                    focus.deactivate(uid)
+                } catch (failure: CancellationException) {
+                    throw failure
+                } catch (_: Exception) {
+                    // Session access is already cleared in the UI.
+                }
+            }
         } else {
             showMessage(message)
         }
@@ -245,7 +351,6 @@ class TazerViewModel(
             if (demo) ensureDemoTasks(uid)
         }
         _state.update { it.copy(uid = uid, demo = demo, subscription = subscription, data = null, risks = emptyList(), recovery = false) }
-        rebuild(uid)
         ownerJob = viewModelScope.launch {
             launch {
                 combine(
@@ -269,6 +374,9 @@ class TazerViewModel(
                 }
             }
         }
+        focus.activate(uid)
+        rebuild(uid)
+        consumeFocusLink(uid)
     }
 
     private suspend fun rebuild(uid: String) {
@@ -276,6 +384,7 @@ class TazerViewModel(
         try {
             val plan = repository.rebuildPlan(uid, now)
             _state.update { if (it.uid == uid) it.copy(risks = plan.risks, now = now) else it }
+            focus.sync(uid)
         } catch (failure: CancellationException) {
             throw failure
         } catch (_: Exception) {

@@ -67,6 +67,12 @@ internal interface TazerDao {
     suspend fun reopenTask(uid: String, id: String, remainingMinutes: Int): Int
 
     @Query("""
+        UPDATE Task SET status = 'IN_PROGRESS', remainingMinutes = :remainingMinutes
+        WHERE ownerUid = :uid AND id = :taskId AND status != 'DONE'
+    """)
+    suspend fun updateFocusTask(uid: String, taskId: String, remainingMinutes: Int): Int
+
+    @Query("""
         UPDATE Task
         SET status = 'DONE', remainingMinutes = 0, completedAt = :completedAt
         WHERE ownerUid = :uid AND id = :taskId AND status != 'DONE'
@@ -126,6 +132,53 @@ internal interface TazerDao {
         )
     """)
     suspend fun hasActiveSession(uid: String): Boolean
+
+    @Query("SELECT * FROM WorkSession WHERE ownerUid = :uid AND id = :id")
+    suspend fun findFocusSession(uid: String, id: String): WorkSession?
+
+    @Query("""
+        SELECT * FROM WorkSession WHERE ownerUid = :uid
+        AND state IN ('RUNNING', 'OVERTIME', 'EXTENDED')
+        ORDER BY plannedStartAt, id LIMIT 1
+    """)
+    suspend fun findActiveFocus(uid: String): WorkSession?
+
+    @Query("""
+        SELECT MAX(CASE
+            WHEN timerBootId = :bootId AND activeSinceElapsedMs <= :elapsedMs - actualWorkMs
+                THEN :wallMs - (:elapsedMs - activeSinceElapsedMs - actualWorkMs)
+            ELSE endedAt END)
+        FROM WorkSession WHERE ownerUid = :uid AND state = 'DONE' AND actualWorkMs IS NOT NULL
+    """)
+    suspend fun findLatestFocusEnd(uid: String, wallMs: Long, elapsedMs: Long?, bootId: String?): Long?
+
+    @Query("""
+        SELECT * FROM WorkSession WHERE ownerUid = :uid AND state = 'DONE' AND timerBootId = :bootId
+        AND activeSinceElapsedMs IS NOT NULL AND actualWorkMs IS NOT NULL
+        ORDER BY activeSinceElapsedMs DESC
+    """)
+    suspend fun findFinishedFocusOnBoot(uid: String, bootId: String): List<WorkSession>
+
+    @Query("""
+        UPDATE WorkSession SET state = :state, startedAt = :startedAt, endedAt = :endedAt,
+            actualWorkMs = :actualWorkMs, timerBootId = :bootId, activeSinceElapsedMs = :startElapsedMs,
+            cutoffElapsedMs = :cutoffElapsedMs, lastObservedWorkMs = :checkpointMs, revision = :revision
+        WHERE ownerUid = :uid AND id = :id AND revision = :previousRevision
+    """)
+    suspend fun updateFocus(
+        uid: String,
+        id: String,
+        previousRevision: Long,
+        state: WorkSessionState,
+        startedAt: Long?,
+        endedAt: Long?,
+        actualWorkMs: Long?,
+        bootId: String?,
+        startElapsedMs: Long?,
+        cutoffElapsedMs: Long?,
+        checkpointMs: Long?,
+        revision: Long,
+    ): Int
 
     @Query("""
         SELECT * FROM WorkSession WHERE ownerUid = :uid AND state = 'PENDING'

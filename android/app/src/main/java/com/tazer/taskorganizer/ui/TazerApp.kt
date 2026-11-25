@@ -46,6 +46,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.tazer.taskorganizer.data.WorkSessionState
 import java.time.ZoneId
 
 private val DayColors = lightColorScheme(
@@ -73,7 +74,7 @@ private val Sections = listOf("Tugas", "Jadwal", "Pengaturan")
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TazerApp(model: TazerViewModel, launch: (Intent) -> Unit) {
+fun TazerApp(model: TazerViewModel, launch: (Intent) -> Unit, requestNotifications: () -> Unit, permissionRefresh: Int) {
     val state by model.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(state.message) {
@@ -92,35 +93,57 @@ fun TazerApp(model: TazerViewModel, launch: (Intent) -> Unit) {
                     CircularProgressIndicator(Modifier.semantics { contentDescription = "Memuat tugas" })
                 }
             }
-            else -> WorkspaceScreen(state, workspace, model, snackbar)
+            else -> WorkspaceScreen(state, workspace, model, snackbar, launch, requestNotifications, permissionRefresh)
         }
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun WorkspaceScreen(state: TazerState, workspace: Workspace, model: TazerViewModel, snackbar: SnackbarHostState) {
+private fun WorkspaceScreen(
+    state: TazerState, workspace: Workspace, model: TazerViewModel, snackbar: SnackbarHostState,
+    launch: (Intent) -> Unit, requestNotifications: () -> Unit, permissionRefresh: Int,
+) {
     var section by rememberSaveable(state.uid) { mutableIntStateOf(0) }
     var taskEditorId by rememberSaveable(state.uid) { mutableStateOf<String?>(null) }
     var archivedTab by rememberSaveable(state.uid) { mutableStateOf(false) }
     var viewDay by rememberSaveable(state.uid) { mutableStateOf<String?>(null) }
+    var deferDialog by rememberSaveable(state.uid) { mutableStateOf(false) }
+    var permissionDialog by rememberSaveable(state.uid) { mutableStateOf(false) }
     val zone = ZoneId.of(workspace.profile.zoneId)
-    val editing = taskEditorId != null
+    val focusTarget = state.focusTarget
+    val inFocus = focusTarget != null
+    val focusedSession = workspace.sessions.firstOrNull { it.id == focusTarget?.id }
+    val focusedTask = workspace.tasks.firstOrNull { it.id == focusedSession?.taskId }
+    val overrun = workspace.sessions.firstOrNull { it.state == WorkSessionState.OVERTIME }
+    val editing = taskEditorId != null && !inFocus
     val editedTask = workspace.tasks.firstOrNull { it.id == taskEditorId }
     val closeEditor = { taskEditorId = null }
+    LaunchedEffect(inFocus) { if (inFocus) section = 1 }
+    LaunchedEffect(overrun?.id, overrun?.revision) {
+        if (overrun != null && focusTarget?.id != overrun.id) model.openFocus(overrun)
+    }
     BackHandler(enabled = editing, onBack = closeEditor)
-    BackHandler(enabled = !editing && section != 0) { section = 0 }
+    BackHandler(enabled = inFocus, onBack = model::closeFocus)
+    BackHandler(enabled = !inFocus && !editing && section != 0) { section = 0 }
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(if (editing) if (editedTask == null) "Tambah tugas" else "Edit tugas" else Sections[section]) },
+                title = {
+                    Text(when {
+                        inFocus -> "Timer fokus"
+                        editing -> if (editedTask == null) "Tambah tugas" else "Edit tugas"
+                        else -> Sections[section]
+                    })
+                },
                 navigationIcon = {
                     if (editing) TextButton(onClick = closeEditor) { Text("Kembali") }
+                    if (inFocus) TextButton(onClick = model::closeFocus) { Text("Kembali") }
                 },
             )
         },
         bottomBar = {
-            if (!editing) NavigationBar {
+            if (!inFocus && !editing) NavigationBar {
                 Sections.forEachIndexed { index, label ->
                     NavigationBarItem(
                         selected = section == index,
@@ -132,7 +155,7 @@ private fun WorkspaceScreen(state: TazerState, workspace: Workspace, model: Taze
             }
         },
         floatingActionButton = {
-            if (section == 0 && !editing && !archivedTab) {
+            if (section == 0 && !inFocus && !editing && !archivedTab) {
                 FloatingActionButton(
                     onClick = { taskEditorId = "" },
                     modifier = Modifier.semantics { contentDescription = "Tambah tugas" },
@@ -143,7 +166,14 @@ private fun WorkspaceScreen(state: TazerState, workspace: Workspace, model: Taze
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.TopCenter) {
             Column(Modifier.widthIn(max = 720.dp).fillMaxSize()) {
-                if (editing) {
+                if (focusTarget != null) {
+                    if (focusedSession != null && focusedTask != null) {
+                        FocusScreen(focusedSession, focusedTask, focusTarget, zone, state, model,
+                            { permissionDialog = true }, { deferDialog = true })
+                    } else {
+                        Text("Memuat sesi…", modifier = Modifier.padding(20.dp))
+                    }
+                } else if (editing) {
                     TaskEditor(editedTask, zone, state.subscription?.tier, state.busy, model, closeEditor)
                 } else when (section) {
                     0 -> TasksScreen(workspace, state, zone, archivedTab, { archivedTab = it }, model) {
@@ -151,13 +181,15 @@ private fun WorkspaceScreen(state: TazerState, workspace: Workspace, model: Taze
                     }
                     1 -> TimelineScreen(
                         workspace, state, zone, viewDay?.let(java.time.LocalDate::parse) ?: localDate(state.now, zone),
-                        { viewDay = it.toString() },
+                        { viewDay = it.toString() }, model::openFocus, { deferDialog = true }, { permissionDialog = true },
                     )
                     2 -> SettingsScreen(workspace, state, model)
                 }
             }
         }
     }
+    if (deferDialog) DeferFocusDialog(zone, state.busy, model) { deferDialog = false }
+    if (permissionDialog) FocusPermissionsDialog(model.focus, permissionRefresh, launch, requestNotifications) { permissionDialog = false }
 }
 
 @Composable

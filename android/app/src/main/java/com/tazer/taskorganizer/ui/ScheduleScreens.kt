@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import com.tazer.taskorganizer.data.FixedSchedule
 import com.tazer.taskorganizer.data.FixedScheduleKind
 import com.tazer.taskorganizer.data.UserProfile
+import com.tazer.taskorganizer.data.WorkSession
 import com.tazer.taskorganizer.data.WorkSessionState
 import com.tazer.taskorganizer.domain.ScheduleRule
 import com.tazer.taskorganizer.domain.Scheduler
@@ -46,12 +47,14 @@ import java.time.format.TextStyle
 
 private data class TimelineRow(
     val id: String, val title: String, val kind: String, val start: Long, val end: Long,
+    val session: WorkSession? = null,
 )
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun TimelineScreen(
     workspace: Workspace, state: TazerState, zone: ZoneId, day: LocalDate, selectDay: (LocalDate) -> Unit,
+    openFocus: (WorkSession) -> Unit, defer: () -> Unit, permissions: () -> Unit,
 ) {
     val today = localDate(state.now, zone)
     val start = day.atStartOfDay(zone).toInstant().toEpochMilli()
@@ -68,12 +71,24 @@ internal fun TimelineScreen(
             it.state == WorkSessionState.PENDING && it.plannedStartAt < end && it.plannedEndAt > start
         }.mapNotNull { session ->
             val task = tasksById[session.taskId] ?: return@mapNotNull null
-            TimelineRow("work-" + session.id, task.title, "Sesi fokus", session.plannedStartAt, session.plannedEndAt)
+            TimelineRow("work-" + session.id, task.title, "Sesi fokus", session.plannedStartAt, session.plannedEndAt, session)
         }.toList()
         (fixedRows + workRows).sortedWith(compareBy<TimelineRow> { it.start }.thenBy { it.id })
     }
     LazyColumn(contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp)) {
         item {
+            workspace.sessions.firstOrNull { it.state in ActiveFocusStates }?.let { active ->
+                TextButton(onClick = { openFocus(active) }) { Text("Buka timer aktif") }
+            }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                TextButton(onClick = defer, enabled = !state.busy) { Text("Saya lagi sibuk") }
+                TextButton(onClick = permissions) { Text("Izin pengingat") }
+            }
+            if (state.risks.isNotEmpty()) Text(
+                "Risiko lewat deadline pada ${state.risks.size} tugas. Lihat tab Belum Selesai.",
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(bottom = 12.dp),
+            )
             Text(DayFormat.format(day), modifier = Modifier.semantics { heading() }, style = MaterialTheme.typography.titleLarge)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 TextButton(onClick = { selectDay(day.minusDays(1)) }) { Text("Sebelumnya") }
@@ -95,6 +110,9 @@ internal fun TimelineScreen(
                 val ends = if (row.end >= end) "24:00" else formatTime(row.end, zone)
                 Text(starts + "–" + ends + " · " + row.kind, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
                 Text(row.title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
+                if (day == today && row.session != null && row.end > state.now) {
+                    TextButton(onClick = { openFocus(row.session) }) { Text("Buka timer") }
+                }
             }
             HorizontalDivider()
         }
