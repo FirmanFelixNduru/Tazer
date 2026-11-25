@@ -33,7 +33,6 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -289,9 +288,7 @@ private fun TimelineEntry(row: TimelineRow, start: Long, end: Long, now: Long, z
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(row.title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f).semantics { heading() })
                         if (row.session != null && (active || isToday && row.end > now)) {
-                            IconButton(onClick = { openFocus(row.session) }) {
-                                TazerIcon(TazerGlyph.Timer, if (active) "Buka timer aktif" else "Buka timer")
-                            }
+                            TimerIconButton(if (active) "Buka timer aktif" else "Buka timer") { openFocus(row.session) }
                         }
                     }
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {

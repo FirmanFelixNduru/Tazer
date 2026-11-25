@@ -153,7 +153,7 @@ internal fun TasksScreen(
                     if (archived) {
                         OutlinedButton(onClick = { reopenId = task.id }, enabled = !state.busy) { Text("Buka kembali") }
                     } else {
-                        TaskAction(TazerGlyph.Edit, "Edit tugas ${task.title}", MaterialTheme.colorScheme.onSurfaceVariant,
+                        TaskAction(TazerGlyph.Edit, "Edit tugas ${task.title}", MaterialTheme.colorScheme.onSurface,
                             !state.busy) { onEdit(task) }
                         val success = if (LocalTazerDark.current) Color(0xFF84D39A) else Color(0xFF146634)
                         TaskAction(TazerGlyph.Check, "Tandai selesai ${task.title}", success, !state.busy) { model.finishTask(task) }

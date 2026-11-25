@@ -24,6 +24,7 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -47,6 +48,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
@@ -276,6 +278,15 @@ private fun FloatingTimerDeck(session: WorkSession, title: String, runtime: Focu
     }
 }
 
+@Composable
+internal fun TimerIconButton(label: String, onClick: () -> Unit) {
+    OutlinedIconButton(
+        onClick = onClick,
+        modifier = Modifier.size(48.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+    ) { TazerIcon(TazerGlyph.Timer, label) }
+}
+
 internal enum class TazerGlyph { Tasks, Timeline, Calendar, Settings, Timer, Previous, Next, Down, Edit, Delete, Check, Add }
 
 @Composable
@@ -320,10 +331,21 @@ internal fun TazerIcon(glyph: TazerGlyph, description: String? = null) {
             TazerGlyph.Next -> { line(.4f, .24f, .66f, .5f); line(.66f, .5f, .4f, .76f) }
             TazerGlyph.Down -> { line(.24f, .37f, .5f, .63f); line(.5f, .63f, .76f, .37f) }
             TazerGlyph.Edit -> {
-                line(.22f, .76f, .66f, .32f)
-                line(.33f, .82f, .78f, .38f)
-                line(.22f, .76f, .33f, .82f)
-                line(.66f, .32f, .78f, .38f)
+                val w = size.width
+                val h = size.height
+                drawPath(Path().apply {
+                    moveTo(w * .10f, h * .90f)
+                    lineTo(w * .15f, h * .65f)
+                    lineTo(w * .61f, h * .19f)
+                    lineTo(w * .81f, h * .39f)
+                    lineTo(w * .35f, h * .85f)
+                    close()
+                    moveTo(w * .67f, h * .13f)
+                    quadraticTo(w * .75f, h * .05f, w * .83f, h * .13f)
+                    lineTo(w * .87f, h * .17f)
+                    quadraticTo(w * .95f, h * .25f, w * .87f, h * .33f)
+                    close()
+                }, ink)
             }
             TazerGlyph.Delete -> {
                 line(.20f, .30f, .80f, .30f)

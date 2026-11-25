@@ -185,7 +185,7 @@ internal fun CalendarScreen(workspace: Workspace, state: TazerState, zone: ZoneI
                 trailingContent = when {
                     item.event != null -> ({ IconButton(onClick = { openEvent(item.event) }) { TazerIcon(TazerGlyph.Edit, "Edit " + item.title) } })
                     item.session?.let { it.state in ActiveFocusStates || it.state == WorkSessionState.PENDING && day == today && it.plannedEndAt > state.now } == true ->
-                        ({ IconButton(onClick = { model.openFocus(requireNotNull(item.session)) }) { TazerIcon(TazerGlyph.Timer, "Buka timer") } })
+                        ({ TimerIconButton("Buka timer") { model.openFocus(requireNotNull(item.session)) } })
                     else -> null
                 },
                 colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surface),
