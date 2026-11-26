@@ -1,5 +1,8 @@
 package com.tazer.taskorganizer.ui
 
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Button
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.draw.alpha
@@ -52,6 +55,8 @@ internal class Neu(
     val canvas: Color, val canvasTop: Color, val canvasBottom: Color, val surface: Color, val recessed: Color,
     val highlight: Color, val shade: Color, val ink: Color, val muted: Color, val outline: Color,
     val accent: Color, val onAccent: Color,
+    /** Royal-blue fill for primary controls; white content keeps 4.5:1 in both themes (v1.9.1). */
+    val fill: Color, val onFill: Color = Color.White,
 ) {
     val canvasBrush get() = Brush.verticalGradient(listOf(canvasTop, canvasBottom))
 
@@ -61,14 +66,14 @@ internal class Neu(
             surface = Color(0xFFF4F7FD), recessed = Color(0xFFE1E8F5),
             highlight = Color(0xF2FFFFFF), shade = Color(0xB8A9B9D8),
             ink = Color(0xFF141A2E), muted = Color(0xFF535E77), outline = Color(0xFF76839F),
-            accent = Color(0xFF2254E6), onAccent = Color.White,
+            accent = Color(0xFF2254E6), onAccent = Color.White, fill = Color(0xFF2254E6),
         )
         val Dark = Neu(
             canvas = Color(0xFF141923), canvasTop = Color(0xFF19202C), canvasBottom = Color(0xFF10141C),
             surface = Color(0xFF1A2130), recessed = Color(0xFF0E1219),
             highlight = Color(0xFF222B3D), shade = Color(0xFF090C12),
             ink = Color(0xFFE6EAF2), muted = Color(0xFF9AA3B5), outline = Color(0xFF64708A),
-            accent = Color(0xFF4F94FF), onAccent = Color(0xFF08142E),
+            accent = Color(0xFF4F94FF), onAccent = Color(0xFF08142E), fill = Color(0xFF2D66EB),
         )
 
         /** Sign In fill: the white label sits on the #2254E6 middle stop (6.0:1). */
@@ -153,32 +158,33 @@ internal fun NeuCard(
 internal fun NeuAccentSquircle(modifier: Modifier = Modifier, size: Dp = 56.dp, content: @Composable BoxScope.() -> Unit) {
     val neu = neu()
     Box(
-        modifier.size(size).neumorphicRaised(neu, size * .32f, fill = neu.accent)
-            .background(neu.accent, RoundedCornerShape(size * .32f)),
+        modifier.size(size).neumorphicRaised(neu, size * .32f, fill = neu.fill)
+            .background(neu.fill, RoundedCornerShape(size * .32f)),
         contentAlignment = Alignment.Center, content = content,
     )
 }
 
-/** Two-way segmented control: a recessed track with the selected segment raised in the accent colour. */
+/** Segmented control: a recessed track with the selected segment raised in the royal-blue fill. */
 @Composable
 internal fun NeuSegmented(options: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) {
     val neu = neu()
     val track = RoundedCornerShape(26.dp)
     Row(
-        modifier.fillMaxWidth().neumorphicInset(neu, 26.dp).border(1.dp, neu.outline, track).padding(5.dp).selectableGroup(),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        modifier.fillMaxWidth().neumorphicInset(neu, 26.dp).border(1.dp, neu.outline, track).padding(4.dp).selectableGroup(),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         options.forEachIndexed { index, label ->
             val active = index == selected
-            val segment = RoundedCornerShape(21.dp)
+            // Track radius 26 minus the 4 dp inset keeps the pill concentric with its track.
+            val segment = RoundedCornerShape(22.dp)
             Box(
                 Modifier.weight(1f).heightIn(min = 44.dp)
-                    .then(if (active) Modifier.neumorphicRaised(neu, 21.dp, 3.dp, neu.accent).background(neu.accent, segment) else Modifier)
+                    .then(if (active) Modifier.neumorphicRaised(neu, 22.dp, 3.dp, neu.fill).background(neu.fill, segment) else Modifier)
                     .clip(segment).selectable(active, role = Role.Tab, onClick = { onSelect(index) }),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    label, color = if (active) neu.onAccent else neu.ink,
+                    label, color = if (active) neu.onFill else neu.ink, maxLines = 1,
                     style = MaterialTheme.typography.labelLarge.copy(fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium),
                     textAlign = TextAlign.Center,
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp),
@@ -201,6 +207,34 @@ internal fun NeuIconAction(glyph: TazerGlyph, description: String, enabled: Bool
             contentAlignment = Alignment.Center,
         ) { CompositionLocalProvider(LocalContentColor provides neu.ink) { TazerIcon(glyph) } }
     }
+}
+
+/** Primary action: royal-blue fill, white label, raised. Secondary actions stay outlined on the surface. */
+@Composable
+internal fun PrimaryButton(
+    onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true,
+    content: @Composable RowScope.() -> Unit,
+) {
+    val neu = neu()
+    Button(
+        onClick = onClick,
+        modifier = modifier.then(if (enabled) Modifier.neumorphicRaised(neu, 28.dp, 3.dp, neu.fill) else Modifier),
+        enabled = enabled,
+        colors = ButtonDefaults.buttonColors(containerColor = neu.fill, contentColor = neu.onFill),
+        content = content,
+    )
+}
+
+/** 48 dp royal-blue icon button with a white glyph (Pengaturan gear, Kembali arrow). */
+@Composable
+internal fun NeuFillIconButton(glyph: TazerGlyph, description: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val neu = neu()
+    val shape = RoundedCornerShape(16.dp)
+    Box(
+        modifier.size(48.dp).neumorphicRaised(neu, 16.dp, 3.dp, neu.fill).background(neu.fill, shape).clip(shape)
+            .clickable(role = Role.Button, onClick = onClick).semantics { contentDescription = description },
+        contentAlignment = Alignment.Center,
+    ) { CompositionLocalProvider(LocalContentColor provides neu.onFill) { TazerIcon(glyph) } }
 }
 
 /** Whole-screen canvas with the soft vertical gradient. */

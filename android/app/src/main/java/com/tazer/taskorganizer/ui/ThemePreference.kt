@@ -22,7 +22,7 @@ import androidx.core.view.WindowCompat
 internal enum class TazerThemeMode(val label: String) {
     LIGHT("Light"),
     DARK("Dark"),
-    SYSTEM("System Default"),
+    SYSTEM("System"),
 }
 
 internal val LocalTazerDark = staticCompositionLocalOf { false }

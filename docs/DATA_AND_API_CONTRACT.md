@@ -87,7 +87,7 @@ Tombol **Bagikan** pada kartu tugas membuka Android Share Sheet berisi ringkasan
 
 ### Navigasi jadwal dan acara
 
-1. Sejak v1.9.0, tombol `+` (squircle royal blue, label aksesibilitas "Tambah ke jadwal") ada di layar **Kalender** dan menggantikan tombol "Tambah acara" lama. Tombol ini membuka dua pilihan, yaitu **Tambah Acara** dan **Jadwal Tetap**, yang masing-masing membuka halaman khusus. Layar **Jadwal** tidak lagi punya tombol `+`. Jadwal tetap hanya dikelola di halaman Jadwal Tetap, tidak di Pengaturan. **Pengaturan fokus** hanya ada di Pengaturan.
+1. Sejak v1.9.0, tombol `+` (squircle royal blue, label aksesibilitas "Tambah ke jadwal") ada di layar **Kalender** dan menggantikan tombol "Tambah acara" lama. Tombol ini membuka dua pilihan, yaitu **Tambah Acara** dan **Jadwal Tetap**, yang masing-masing membuka halaman khusus. Layar **Jadwal** tidak lagi punya tombol `+`. Sejak v1.9.1, bottom bar berisi Jadwal, Tugas, Kalender, dan Statistik, sedangkan **Pengaturan** dibuka dari tombol gerigi di kanan atas. Jadwal tetap hanya dikelola di halaman Jadwal Tetap, tidak di Pengaturan. **Pengaturan fokus** hanya ada di Pengaturan.
 2. Halaman **Acara** hanya memakai input manual: judul, tanggal mulai dan selesai (satu atau beberapa hari), jam mulai dan selesai lewat spinner atau seharian, warna penanda, catatan opsional, lalu daftar acara tersimpan dengan aksi edit dan hapus. Tombol tambah dan edit di Kalender membuka halaman yang sama. Warna penanda tampil di Kalender.
 
 ### Impor jadwal tetap

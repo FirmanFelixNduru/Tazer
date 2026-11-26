@@ -8,9 +8,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -33,7 +31,7 @@ internal fun ImportPackageButton(enabled: Boolean, model: TazerViewModel) {
     var open by rememberSaveable { mutableStateOf(false) }
     var text by rememberSaveable { mutableStateOf("") }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
-    OutlinedButton(onClick = { open = true }, enabled = enabled, modifier = Modifier.fillMaxWidth()) {
+    PrimaryButton(onClick = { open = true }, enabled = enabled, modifier = Modifier.fillMaxWidth()) {
         TazerIcon(TazerGlyph.Share)
         Text("Impor Paket Tugas", Modifier.padding(start = 10.dp))
     }
@@ -58,7 +56,7 @@ internal fun ImportPackageButton(enabled: Boolean, model: TazerViewModel) {
             }
         },
         confirmButton = {
-            Button(onClick = {
+            PrimaryButton(onClick = {
                 error = model.reviewPackage(text)
                 if (error == null) { open = false; text = "" }
             }, enabled = text.isNotBlank()) {
@@ -93,7 +91,7 @@ internal fun PackageReviewDialog(pack: TaskPackage, zone: ZoneId, busy: Boolean,
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         },
-        confirmButton = { Button(onClick = onSave, enabled = !busy) { Text("Simpan tugas") } },
+        confirmButton = { PrimaryButton(onClick = onSave, enabled = !busy) { Text("Simpan tugas") } },
         dismissButton = { TextButton(onClick = onDismiss, enabled = !busy) { Text("Batal") } },
     )
 }

@@ -20,7 +20,6 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -162,20 +161,20 @@ internal fun FocusScreen(
         } else Text(status, style = MaterialTheme.typography.titleMedium, color = colors.onSurfaceVariant)
         Text(formatDate(session.plannedStartAt, zone) + " – " + formatTime(session.plannedEndAt, zone))
         if (session.state == WorkSessionState.PENDING) {
-            Button(onClick = { model.startFocus(session) }, enabled = canStart && !state.busy) { Text("Mulai sesi") }
+            PrimaryButton(onClick = { model.startFocus(session) }, enabled = canStart && !state.busy) { Text("Mulai sesi") }
             if (!canStart) Text("Sesi dapat dimulai pada jam yang tertera. Lihat jadwal terbaru bila waktunya sudah lewat.")
         }
         if (active) {
             if (session.state == WorkSessionState.PAUSED) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { model.resumeFocus(session) }, enabled = !state.busy) { Text("Lanjutkan") }
+                    PrimaryButton(onClick = { model.resumeFocus(session) }, enabled = !state.busy) { Text("Lanjutkan") }
                     OutlinedButton(onClick = { model.finishFocus(session) }, enabled = !state.busy) { Text("Sudah Selesai") }
                     OutlinedButton(onClick = { model.stopFocus(session) }, enabled = !state.busy) { Text("Hentikan sesi") }
                 }
             } else if (overtime) {
                 Text("Waktu rencana habis. Timer tetap menghitung waktu aktual.")
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { model.finishFocus(session) }, enabled = !state.busy) { Text("Sudah Selesai") }
+                    PrimaryButton(onClick = { model.finishFocus(session) }, enabled = !state.busy) { Text("Sudah Selesai") }
                     OutlinedButton(onClick = { decision = "extra" }, enabled = !state.busy && session.state == WorkSessionState.OVERTIME) {
                         Text("Belum Selesai")
                     }
@@ -183,7 +182,7 @@ internal fun FocusScreen(
                 }
             } else {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { model.finishFocus(session) }, enabled = !state.busy) { Text("Selesai lebih cepat") }
+                    PrimaryButton(onClick = { model.finishFocus(session) }, enabled = !state.busy) { Text("Selesai lebih cepat") }
                     OutlinedButton(onClick = { model.pauseFocus(session) }, enabled = !state.busy) { Text("Jeda") }
                 }
                 Text("Jeda menyimpan progres dan menjadwalkan sisa kerja.", style = MaterialTheme.typography.bodySmall)
@@ -399,7 +398,7 @@ internal fun FocusPermissionsDialog(
         },
         dismissButton = { if (dirty) TextButton(onClick = close, enabled = !saving) { Text("Batal") } },
         confirmButton = {
-            Button(enabled = valid && !saving, onClick = {
+            PrimaryButton(enabled = valid && !saving, onClick = {
                 if (!dirty) {
                     close()
                 } else {

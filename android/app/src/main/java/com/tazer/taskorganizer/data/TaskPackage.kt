@@ -25,7 +25,8 @@ object TaskPackages {
     const val LINK = "tazer://import-task?d="
     private const val MAX_CODE = 24 * 1024
     private val code = Regex("""TAZER-TASK-V1:([A-Za-z0-9_-]+)""")
-    private val link = Regex("""tazer://import-task\?d=([A-Za-z0-9_-]+)""")
+    // Shared links always use tazer://; the debug build opens its own tazer-debug:// links too.
+    private val link = Regex("""tazer(?:-debug)?://import-task\?d=([A-Za-z0-9_-]+)""")
     private val deadlineFormat = DateTimeFormatter.ofPattern("EEEE, d MMMM yyyy HH:mm", Locale.forLanguageTag("id-ID"))
 
     fun from(task: Task, subtasks: List<Subtask>) = TaskPackage(

@@ -96,6 +96,6 @@ private fun BriefingRow(
             }
             Switch(checked = enabled, onCheckedChange = null)
         }
-        PickerTimeButton(minute, true, onTime)
+        PickerTimeButton(minute, true, onSelected = onTime)
     }
 }

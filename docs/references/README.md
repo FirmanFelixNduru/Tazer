@@ -7,6 +7,7 @@ Catatan **Visual & UX Reference Analyst** (`claude-sonnet-5-5`, high) untuk rede
 | File | Isi | Ukuran | Git |
 | --- | --- | --- | --- |
 | `login-neumorphic-blue-reference.jpg` | Layar login neumorphic biru-putih dari owner. Sumber tidak diketahui dan tanpa watermark. | 941×1672, 101 KB | Ter-track. Logo Google, Discord, dan Facebook di dalamnya milik pemiliknya masing-masing dan hanya dipakai sebagai referensi tata letak. |
+| `task-filter-dropdown-reference.jpg` | Tiga panel filter (checkbox kategori dengan hitungan, slider rentang, chip pilihan, radio, dan tombol "Show 32 Results" + "Reset") dari owner untuk v1.9.1. Gaya kit UI web, sumber tidak diketahui. | 1600×1200, 111 KB, tanpa EXIF | Ter-track. Tidak ada watermark atau logo. Nama merek di dalamnya (Apple, Logitech, dan lainnya) hanya teks contoh, tidak dipakai di aplikasi. |
 | `app-ui-neumorphic-mobile-reference.jpg` | Tiga layar aplikasi neumorphic dengan aksen teal. | 1600×1165, 167 KB | **Tidak ter-track** (`.gitignore`). Gambar ini pratinjau stok Depositphotos ber-watermark (Image ID 522540032) tanpa lisensi, sehingga tidak boleh disebarkan di repo publik. Salinannya hanya ada di perangkat ini. Bila tim lain membutuhkannya, minta owner mengirim ulang atau membeli lisensinya. |
 
 Warna di bawah diukur dari piksel kedua gambar, lalu disesuaikan agar lulus WCAG 2.x. Rasio kontras dihitung dengan rumus luminansi WCAG.
@@ -113,7 +114,32 @@ Tombol `+` beserta dropdown **Tambah Acara** dan **Jadwal Tetap** (v1.8.0) dipin
 | **System & Algorithm Architect** | Tidak ada perubahan kontrak data. Setelah mockup disetujui, perbarui `DATA_AND_API_CONTRACT.md` bagian Navigasi jadwal dan acara (titik masuk Kalender) dan tambahkan token desain sebagai rujukan UI. |
 | **QA & Security Reviewer** | Tambah tes kontras token (JVM), uji tangkapan layar Light/Dark untuk login dan kalender, dan pastikan aset stok ber-watermark tidak pernah ter-commit. |
 
-## 5. Gerbang persetujuan
+## 5. Filter tugas v1.9.1 (mengikuti `task-filter-dropdown-reference.jpg`)
+
+Catatan **Visual & UX Reference Analyst** (`claude-sonnet-5-5`, high) setelah uji langsung v1.9.0 oleh owner.
+
+Pola yang diambil dan pemetaannya ke Tazer:
+
+| Referensi | Tazer v1.9.1 |
+| --- | --- |
+| Checkbox kategori dengan hitungan, misalnya "Logitech (234)" | Chip multi-pilih **Mata Kuliah** dengan hitungan tugas di tab aktif, misalnya `RPL (3)`, dengan titik warna mata kuliah |
+| Chip kategori, isi biru saat dipilih | **Tingkat Kesulitan** 1–5 multi-pilih dan **Rentang Deadline** (Semua, Hari Ini, 3 Hari, Minggu Ini, Terlambat) |
+| Slider rentang harga | Diganti pill cepat **Estimasi Durasi** (Semua, ≤ 30 mnt, 30–90 mnt, > 90 mnt) karena satu ketukan lebih cepat dan lebih mudah diakses daripada slider ganda di layar 6 inci |
+| Radio "Row height" | Radio **Urutkan** (Prioritas Tertinggi, Deadline Terdekat, Kesulitan Tertinggi, Durasi Terpendek) |
+| Checkbox "Additional settings" | **Opsi Tambahan**: hanya tugas yang punya sub-tugas belum selesai |
+| "Show 32 Results" + "Reset" | **Tampilkan X Tugas** (hitungan langsung dari draf filter) dengan fill biru, plus **Reset** outlined yang mengosongkan filter tetapi mempertahankan teks pencarian |
+
+Panel dibuka dari tombol **Filter** (ikon tiga garis yang mengecil) di samping kolom cari. Tombol ini berupa surface bergaris saat tidak ada filter, dan berubah menjadi fill biru dengan badge jumlah saat ada filter aktif. Panel memakai bottom sheet dengan surface neumorphic agar muat di layar kecil dan tetap terjangkau ibu jari.
+
+### Audit highlight biru (v1.9.1)
+
+Aturannya: aksi utama di setiap layar memakai fill biru royal dengan teks dan ikon putih, sedangkan aksi sekunder tetap surface bergaris. Fill Light `#2254E6` (putih 6,04:1). Fill Dark `#2D66EB` (putih 4,99:1, batas ke kanvas 3,53:1). Teks aksen tetap `#4F94FF` di Dark karena putih di atasnya hanya 2,99:1.
+
+| Fill biru (utama) | Surface bergaris (sekunder) |
+| --- | --- |
+| Sign In, semua tombol Simpan/Terapkan/Pratinjau/Pulihkan, `+` Kalender dan FAB Tambah tugas, gerigi Pengaturan, Back, Tanggal dan Jam Deadline, Impor Paket Tugas, Scan Foto / Screenshot, Tampilkan X Tugas, Mulai sesi/Lanjutkan, Cek Update, Sinkronkan sekarang, segmen aktif, dan tab aktif bottom bar | Sign Up, Batal, Tutup, Reset, Hapus kunci, Pengaturan fokus, Ekspor/Impor backup, Ekspor .ics, Saya lagi sibuk, Hari Ini, ikon aksi kartu, serta Tanggal dan Jam di Acara dan Jadwal Tetap |
+
+## 6. Gerbang persetujuan
 
 1. Analyst dan UI Dev menyiapkan mockup interaktif login, daftar tugas, kalender dengan tombol `+`, dan pengaturan, masing-masing dalam Light dan Dark.
 2. Owner meninjau dan menyetujui atau meminta revisi.

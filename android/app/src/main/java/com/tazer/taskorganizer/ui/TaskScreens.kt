@@ -1,5 +1,6 @@
 package com.tazer.taskorganizer.ui
 
+import com.tazer.taskorganizer.domain.TaskFacts
 import androidx.compose.foundation.BorderStroke
 import android.content.ActivityNotFoundException
 import android.content.Intent
@@ -19,7 +20,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
@@ -106,22 +106,19 @@ internal fun TasksScreen(
         workspace.tasks.filter { it.status == TaskStatus.DONE }
             .sortedWith(compareByDescending<Task> { it.completedAt }.thenBy { it.id })
     } else ranked
-    var searchText by rememberSaveable { mutableStateOf("") }
-    var courseFilter by rememberSaveable { mutableStateOf<String?>(null) }
-    var difficultyFilter by rememberSaveable { mutableStateOf<Int?>(null) }
-    val query = TaskQuery(searchText, courseFilter, difficultyFilter)
-    val setQuery: (TaskQuery) -> Unit = {
-        searchText = it.text
-        courseFilter = it.course
-        difficultyFilter = it.difficulty
+    var query by rememberSaveable(stateSaver = TaskQuerySaver) { mutableStateOf(TaskQuery()) }
+    val setQuery: (TaskQuery) -> Unit = { query = it }
+    val openSubtasks = remember(workspace.subtasks) {
+        workspace.subtasks.filterNot(Subtask::completed).groupingBy(Subtask::taskId).eachCount()
     }
-    val tasks = tabTasks.filter { TaskSearch.matches(query, it.title, it.course, it.description, it.difficultyScore) }
-    // Course chips follow the text and difficulty filters, so only courses that can still match are offered.
-    val courses = remember(tabTasks, searchText, difficultyFilter, courseFilter) {
-        val facet = query.copy(course = null)
-        TaskSearch.courses(tabTasks.filter { TaskSearch.matches(facet, it.title, it.course, it.description, it.difficultyScore) }
-            .map(Task::course) + listOfNotNull(courseFilter))
+    // Active tasks filter on the work still left; finished ones on the estimate the user confirmed.
+    val facts: (Task) -> TaskFacts = {
+        TaskFacts(it.title, it.course, it.description, it.difficultyScore, it.deadlineAt,
+            if (it.status == TaskStatus.DONE) it.initialEstimatedMinutes else it.remainingMinutes, openSubtasks[it.id] ?: 0)
     }
+    val tasks = TaskSearch.apply(query, tabTasks, state.now, zone, facts)
+    val countFor: (TaskQuery) -> Int = { draft -> TaskSearch.apply(draft, tabTasks, state.now, zone, facts).size }
+    val courses = remember(tabTasks) { TaskSearch.courseCounts(tabTasks.map(Task::course)) }
     val context = LocalContext.current
     val share: (Task) -> Unit = { task ->
         val text = TaskPackages.shareText(TaskPackages.from(task, workspace.subtasks.filter { it.taskId == task.id }), zone)
@@ -147,7 +144,7 @@ internal fun TasksScreen(
         contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 96.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        if (tabTasks.isNotEmpty()) item(key = "filters") { TaskFilterBar(query, courses, setQuery) }
+        if (tabTasks.isNotEmpty()) item(key = "filters") { TaskFilterBar(query, courses, countFor, setQuery) }
         if (tabTasks.isEmpty()) item {
             Text(
                 if (archived) "Belum ada tugas selesai." else "Belum ada tugas aktif. Ketuk Tambah tugas untuk memulai.",
@@ -158,7 +155,8 @@ internal fun TasksScreen(
         items(tasks, key = { it.id }) { task ->
             val sessions = taskSessions[task.id].orEmpty()
             NeuCard(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-            Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            // Generous bottom inset so the card edge clears the Edit / Check / Share / Delete row.
+            Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(task.title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
                 CourseChip(task.course)
                 val subtasks = taskSubtasks[task.id].orEmpty()
@@ -209,7 +207,7 @@ internal fun TasksScreen(
         onDismissRequest = { deleteId = null },
         title = { Text("Hapus tugas?") },
         text = { Text("“" + taskToDelete.title + "” beserta subtask dan riwayat sesinya akan dihapus.") },
-        confirmButton = { Button(onClick = { model.deleteTask(taskToDelete); deleteId = null }) { Text("Hapus") } },
+        confirmButton = { PrimaryButton(onClick = { model.deleteTask(taskToDelete); deleteId = null }) { Text("Hapus") } },
         dismissButton = { OutlinedButton(onClick = { deleteId = null }) { Text("Batal") } },
     )
     if (taskToReopen != null) key(taskToReopen.id) {
@@ -375,8 +373,8 @@ internal fun TaskEditor(task: Task?, zone: ZoneId, tier: SubscriptionTier?, busy
         OutlinedTextField(description, { description = it }, label = { Text("Deskripsi") }, minLines = 3, enabled = editable, modifier = Modifier.fillMaxWidth())
         Text("Deadline", style = MaterialTheme.typography.titleSmall)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            PickerDateButton(day, editable) { date = it.toString() }
-            PickerTimeButton(minute, editable) { minute = it }
+            PickerDateButton(day, editable, prominent = true) { date = it.toString() }
+            PickerTimeButton(minute, editable, prominent = true) { minute = it }
         }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = { analyze(AnalyzerMode.OFFLINE) }, enabled = editable && title.isNotBlank()) {
@@ -438,10 +436,10 @@ internal fun TaskEditor(task: Task?, zone: ZoneId, tier: SubscriptionTier?, busy
                 ) { Text("Tambahkan saran subtask (${proposed.size})") }
             }
         }
-        Button(
+        PrimaryButton(
             onClick = {
-                val score = difficultyValue ?: return@Button
-                val duration = minutesValue ?: return@Button
+                val score = difficultyValue ?: return@PrimaryButton
+                val duration = minutesValue ?: return@PrimaryButton
                 val checklistChange = ChecklistChange(
                     originalChecklist.map(ChecklistItem::draft), checklist.map(ChecklistItem::draft),
                 ).takeIf { it.original != it.items && model.subtasksAvailable }

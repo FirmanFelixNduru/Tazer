@@ -54,7 +54,7 @@ private fun MonthPicker(month: YearMonth, modifier: Modifier, contentPadding: Pa
         contentPadding = contentPadding,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
     ) {
-        Text(monthLabel.format(month), textAlign = TextAlign.Center)
+        Text(monthLabel.format(month), textAlign = TextAlign.Center, maxLines = 1)
     }
     if (pickerOpen) {
         var year by rememberSaveable(month) { mutableIntStateOf(month.year) }
@@ -84,7 +84,7 @@ private fun MonthPicker(month: YearMonth, modifier: Modifier, contentPadding: Pa
                     }
                 }
             },
-            confirmButton = { Button(onClick = { pickerOpen = false }) { Text("Tutup") } },
+            confirmButton = { PrimaryButton(onClick = { pickerOpen = false }) { Text("Tutup") } },
         )
     }
 }
@@ -144,15 +144,16 @@ internal fun CalendarScreen(
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                MonthPicker(month, Modifier.weight(1f).fillMaxHeight(), calendarHeaderPadding) {
+                // The month label is longer than "Hari Ini", so it gets more of the row on narrow phones.
+                MonthPicker(month, Modifier.weight(1.4f).fillMaxHeight(), calendarHeaderPadding) {
                     selected = it.atDay(1).toEpochDay()
                 }
                 FilledTonalButton(
                     onClick = { selected = today.toEpochDay() },
-                    modifier = Modifier.weight(1f).fillMaxHeight().testTag("calendar-today"),
+                    modifier = Modifier.weight(0.9f).fillMaxHeight().testTag("calendar-today"),
                     contentPadding = calendarHeaderPadding,
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-                ) { Text("Hari Ini", textAlign = TextAlign.Center) }
+                ) { Text("Hari Ini", textAlign = TextAlign.Center, maxLines = 1) }
                 NeuIconAction(TazerGlyph.Previous, "Bulan sebelumnya") { selected = month.minusMonths(1).atDay(1).toEpochDay() }
                 NeuIconAction(TazerGlyph.Next, "Bulan berikutnya") { selected = month.plusMonths(1).atDay(1).toEpochDay() }
             }

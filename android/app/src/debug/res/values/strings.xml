@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Tells the debug test build apart from the owner's daily Tazer on the same phone. -->
+    <string name="app_name">Tazer Debug</string>
+</resources>

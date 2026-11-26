@@ -104,7 +104,7 @@ internal fun ScheduleAddButton(openEvents: () -> Unit, openFixed: () -> Unit, en
                 .clickable(enabled = enabled, role = Role.Button, onClick = { open = true })
                 .semantics { contentDescription = "Tambah ke jadwal" },
             size = 52.dp,
-        ) { CompositionLocalProvider(LocalContentColor provides neu.onAccent) { TazerIcon(TazerGlyph.Add) } }
+        ) { CompositionLocalProvider(LocalContentColor provides neu.onFill) { TazerIcon(TazerGlyph.Add) } }
         DropdownMenu(
             open, { open = false }, shape = RoundedCornerShape(18.dp), containerColor = neu.surface,
             border = BorderStroke(1.dp, neu.outline.copy(alpha = .5f)),
@@ -158,7 +158,7 @@ private fun DeleteDialog(title: String, detail: String, confirm: () -> Unit, clo
     onDismissRequest = close,
     title = { Text(title) },
     text = { Text(detail) },
-    confirmButton = { Button(onClick = { confirm(); close() }) { Text("Hapus") } },
+    confirmButton = { PrimaryButton(onClick = { confirm(); close() }) { Text("Hapus") } },
     dismissButton = { TextButton(onClick = close) { Text("Batal") } },
 )
 
@@ -252,7 +252,7 @@ private fun EventForm(event: CalendarEvent?, today: LocalDate, busy: Boolean, mo
         OutlinedTextField(notes, { notes = it.take(10_000) }, Modifier.fillMaxWidth(), label = { Text("Catatan (opsional)") },
             minLines = 2, enabled = !busy)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = {
+            PrimaryButton(onClick = {
                 model.saveEvent(event?.id, title, from, through, if (allDay) null else start, notes,
                     if (allDay) null else end, color) {
                     model.showMessage(if (event == null) "Acara tersimpan." else "Acara diperbarui.")
@@ -442,7 +442,7 @@ internal fun FixedSchedulesPage(workspace: Workspace, state: TazerState, zone: Z
         onDismissRequest = { photoChoice = false },
         title = { Text("Foto / Screenshot Jadwal") },
         text = { Text("AI membaca nama mata kuliah, hari, dan jam dari foto KRS atau jadwal. Ruang dan dosen tidak disimpan.") },
-        confirmButton = { Button(onClick = { photoChoice = false; images.pickGallery() }) { Text("Galeri / Screenshot") } },
+        confirmButton = { PrimaryButton(onClick = { photoChoice = false; images.pickGallery() }) { Text("Galeri / Screenshot") } },
         dismissButton = { OutlinedButton(onClick = { photoChoice = false; images.takePhoto() }) { Text("Ambil Foto") } },
     )
     workspace.fixed.firstOrNull { it.id == deleteId }?.let { block ->
@@ -505,7 +505,7 @@ private fun FixedForm(block: FixedSchedule?, busy: Boolean, model: TazerViewMode
             Switch(breakTime, { breakTime = it }, enabled = !busy, modifier = Modifier.semantics { contentDescription = "Jam istirahat" })
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = {
+            PrimaryButton(onClick = {
                 model.saveFixed(block, label, if (breakTime) FixedScheduleKind.BREAK else FixedScheduleKind.ROUTINE, days, start, end) {
                     model.showMessage(if (block == null) "${days.size} jadwal tetap tersimpan." else "Jadwal tetap diperbarui.")
                     done()
@@ -559,7 +559,7 @@ private fun SchedulePreviewSheet(
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = close, enabled = !busy) { Text("Batal") }
-                Button(
+                PrimaryButton(
                     onClick = { save(selected, batch.ics?.takeIf { withEvents }) },
                     enabled = !busy && (selected.isNotEmpty() || (withEvents && batch.ics != null)),
                     modifier = Modifier.weight(1f),
@@ -624,7 +624,7 @@ private fun DraftEditor(draft: ScheduleDraft, close: () -> Unit, save: (Schedule
                 if (!updated.valid) Text("Isi nama dan pastikan jam selesai setelah jam mulai.", color = MaterialTheme.colorScheme.error)
             }
         },
-        confirmButton = { Button(onClick = { save(updated) }, enabled = updated.valid) { Text("Terapkan") } },
+        confirmButton = { PrimaryButton(onClick = { save(updated) }, enabled = updated.valid) { Text("Terapkan") } },
         dismissButton = { TextButton(onClick = close) { Text("Batal") } },
     )
 }

@@ -13,8 +13,11 @@ class TaskSearchAndColorsTest {
         Row("Proyek React", "Pemrograman Web", "Aplikasi to-do dengan REST API", 5, true),
     )
 
+    private val zone = java.time.ZoneId.of("Asia/Jakarta")
+    private val now = java.time.LocalDateTime.of(2026, 11, 25, 10, 0).atZone(zone).toInstant().toEpochMilli()
+    private fun facts(row: Row) = TaskFacts(row.title, row.course, row.description, row.difficulty, now + 86_400_000, 60)
     private fun search(query: TaskQuery, done: Boolean) =
-        rows.filter { it.done == done && TaskSearch.matches(query, it.title, it.course, it.description, it.difficulty) }.map { it.title }
+        TaskSearch.apply(query, rows.filter { it.done == done }, now, zone, ::facts).map { it.title }
 
     @Test
     fun searchCoversTitleCourseAndDescriptionOnBothTabs() {
@@ -23,17 +26,54 @@ class TaskSearchAndColorsTest {
         assertEquals(listOf("Esai sejarah"), search(TaskQuery("majapahit sejarah"), done = false))
         assertEquals(emptyList<String>(), search(TaskQuery("majapahit react"), done = false))
         assertEquals(listOf("Laporan normalisasi", "Esai sejarah"), search(TaskQuery("  "), done = false))
-        assertTrue(TaskSearch.matches(TaskQuery("BÁSIS dátá"), "x", "Basis Data", "", 1))
+        assertTrue(TaskSearch.matches(TaskQuery("BÁSIS dátá"), TaskFacts("x", "Basis Data", "", 1, now, 30), now, zone))
+    }
+
+    @Test
+    fun filterPanelCombinesCoursesDifficultiesDeadlineDurationSubtasksAndSort() {
+        val hour = 3_600_000L
+        data class T(val id: String, val course: String, val difficulty: Int, val deadline: Long, val minutes: Int, val open: Int)
+        val ranked = listOf(
+            T("a", "RPL", 4, now + 3 * hour, 120, 2),          // later today
+            T("b", "rpl", 2, now - hour, 20, 0),                 // overdue
+            T("c", "Basis Data", 5, now + 50 * hour, 45, 1),    // in two days
+            T("d", "Jaringan", 1, now + 6 * 24 * hour, 90, 0),  // next Tuesday, outside this week
+        )
+        fun ids(query: TaskQuery) = TaskSearch.apply(query, ranked, now, zone) {
+            TaskFacts(it.id, it.course, "", it.difficulty, it.deadline, it.minutes, it.open)
+        }.map { it.id }
+        assertEquals(listOf("a", "b"), ids(TaskQuery(courses = setOf("RPL"))))
+        assertEquals(listOf("a", "c"), ids(TaskQuery(difficulties = setOf(4, 5))))
+        assertEquals(listOf("a"), ids(TaskQuery(deadline = DeadlineRange.TODAY)))
+        assertEquals(listOf("a", "c"), ids(TaskQuery(deadline = DeadlineRange.THREE_DAYS)))
+        assertEquals(listOf("a", "c"), ids(TaskQuery(deadline = DeadlineRange.THIS_WEEK)))
+        assertEquals(listOf("b"), ids(TaskQuery(deadline = DeadlineRange.OVERDUE)))
+        assertEquals(listOf("b"), ids(TaskQuery(duration = DurationRange.SHORT)))
+        assertEquals(listOf("c", "d"), ids(TaskQuery(duration = DurationRange.MEDIUM)))
+        assertEquals(listOf("a"), ids(TaskQuery(duration = DurationRange.LONG)))
+        assertEquals(listOf("a", "c"), ids(TaskQuery(openSubtasksOnly = true)))
+        assertEquals(listOf("a"), ids(TaskQuery(courses = setOf("rpl", "Basis Data"), difficulties = setOf(4, 5), deadline = DeadlineRange.TODAY)))
+        // Sorting is stable and PRIORITY keeps the scheduler order.
+        assertEquals(listOf("a", "b", "c", "d"), ids(TaskQuery()))
+        assertEquals(listOf("b", "a", "c", "d"), ids(TaskQuery(sort = TaskSort.DEADLINE)))
+        assertEquals(listOf("c", "a", "b", "d"), ids(TaskQuery(sort = TaskSort.DIFFICULTY)))
+        assertEquals(listOf("b", "c", "d", "a"), ids(TaskQuery(sort = TaskSort.SHORTEST)))
+        // Badge counts chosen chips and options; Reset keeps the typed search.
+        val busy = TaskQuery("esai", setOf("RPL", "Jaringan"), setOf(3), DeadlineRange.OVERDUE, DurationRange.LONG, TaskSort.DEADLINE, true)
+        assertEquals(7, busy.filterCount)
+        assertEquals(TaskQuery("esai"), busy.withoutFilters())
+        assertEquals(listOf("RPL" to 2, "Basis Data" to 1).sortedBy { CourseColors.key(it.first) },
+            TaskSearch.courseCounts(listOf("RPL", "rpl ", "Basis Data", "")))
     }
 
     @Test
     fun courseAndDifficultyChipsCombineWithText() {
-        assertEquals(listOf("Laporan normalisasi"), search(TaskQuery(course = "BASIS DATA"), done = false))
-        assertEquals(listOf("Kuis SQL"), search(TaskQuery(course = "Basis Data"), done = true))
-        assertEquals(listOf("Proyek React"), search(TaskQuery(difficulty = 5), done = true))
-        assertEquals(emptyList<String>(), search(TaskQuery("erd", difficulty = 4), done = false))
+        assertEquals(listOf("Laporan normalisasi"), search(TaskQuery(courses = setOf("BASIS DATA")), done = false))
+        assertEquals(listOf("Kuis SQL"), search(TaskQuery(courses = setOf("Basis Data")), done = true))
+        assertEquals(listOf("Proyek React"), search(TaskQuery(difficulties = setOf(5)), done = true))
+        assertEquals(emptyList<String>(), search(TaskQuery("erd", difficulties = setOf(4)), done = false))
         assertFalse(TaskQuery().active)
-        assertTrue(TaskQuery(difficulty = 1).active)
+        assertTrue(TaskQuery(difficulties = setOf(1)).active)
         assertEquals(listOf("Basis Data", "Pemrograman Web", "Sejarah Indonesia"), TaskSearch.courses(rows.map { it.course } + " "))
     }
 

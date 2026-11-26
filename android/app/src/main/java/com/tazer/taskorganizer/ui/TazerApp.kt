@@ -1,5 +1,7 @@
 package com.tazer.taskorganizer.ui
 
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.platform.LocalLayoutDirection
 import android.content.Intent
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
@@ -27,7 +29,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -130,6 +131,9 @@ private val NightColors = darkColorScheme(
 
 private val Sections = listOf("Tugas", "Jadwal", "Kalender", "Pengaturan", "Statistik")
 private val SectionGlyphs = listOf(TazerGlyph.Tasks, TazerGlyph.Timeline, TazerGlyph.Calendar, TazerGlyph.Settings, TazerGlyph.Statistics)
+private const val SettingsSection = 3
+// Bottom bar since v1.9.1: Jadwal, Tugas, Kalender, Statistik. Pengaturan opens from the gear at the top right.
+private val TabOrder = listOf(1, 0, 2, 4)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -188,6 +192,8 @@ private fun WorkspaceScreen(
     theme: TazerThemeMode, scheduleRequest: Int, onScheduleOpened: () -> Unit, setTheme: (TazerThemeMode) -> Unit,
 ) {
     var section by rememberSaveable(state.uid) { mutableIntStateOf(0) }
+    var lastTab by rememberSaveable(state.uid) { mutableIntStateOf(0) }
+    val openSettings = { lastTab = section; section = SettingsSection }
     var taskEditorId by rememberSaveable(state.uid) { mutableStateOf<String?>(null) }
     var archivedTab by rememberSaveable(state.uid) { mutableStateOf(false) }
     var viewDay by rememberSaveable(state.uid) { mutableStateOf<String?>(null) }
@@ -223,7 +229,7 @@ private fun WorkspaceScreen(
     BackHandler(enabled = editing, onBack = closeEditor)
     BackHandler(enabled = onPage, onBack = closePage)
     BackHandler(enabled = inFocus, onBack = model::closeFocus)
-    BackHandler(enabled = !inFocus && !editing && section != 0) { section = 0 }
+    BackHandler(enabled = !inFocus && !editing && section != 0) { section = if (section == SettingsSection) lastTab else 0 }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -236,14 +242,21 @@ private fun WorkspaceScreen(
                     })
                 },
                 navigationIcon = {
-                    if (editing || inFocus || onPage) OutlinedButton(
-                        modifier = Modifier.padding(start = 4.dp, end = 4.dp),
-                        onClick = when {
-                            inFocus -> model::closeFocus
-                            onPage -> closePage
-                            else -> closeEditor
-                        },
-                    ) { Text("Kembali") }
+                    if (editing || inFocus || onPage || section == SettingsSection) {
+                        NeuFillIconButton(TazerGlyph.Back, "Kembali", Modifier.padding(start = 8.dp, end = 8.dp)) {
+                            when {
+                                inFocus -> model.closeFocus()
+                                onPage -> closePage()
+                                editing -> closeEditor()
+                                else -> section = lastTab
+                            }
+                        }
+                    }
+                },
+                actions = {
+                    if (!inFocus && !editing && !onPage && section != SettingsSection) {
+                        NeuFillIconButton(TazerGlyph.Gear, "Pengaturan", Modifier.padding(end = 12.dp), onClick = openSettings)
+                    }
                 },
             )
         },
@@ -258,19 +271,21 @@ private fun WorkspaceScreen(
                     modifier = Modifier.navigationBarsPadding().widthIn(max = 720.dp)
                         .padding(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 10.dp)
                         .neumorphicRaised(neu, 30.dp, fill = neu.surface)
-                        .border(1.dp, neu.outline.copy(alpha = .35f), RoundedCornerShape(30.dp)),
+                        .border(1.dp, neu.outline.copy(alpha = .35f), RoundedCornerShape(30.dp))
+                        // Inner inset so the first and last tab pills never touch the bar's rounded edge.
+                        .padding(horizontal = 10.dp),
                     containerColor = Color.Transparent,
                     tonalElevation = 0.dp,
                     windowInsets = WindowInsets(0, 0, 0, 0),
                 ) {
-                    Sections.forEachIndexed { index, label ->
+                    TabOrder.forEach { index ->
                         NavigationBarItem(
                             selected = section == index,
                             onClick = { section = index },
                             icon = { TazerIcon(SectionGlyphs[index]) },
-                            label = { Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                            label = { Text(Sections[index], maxLines = 1, overflow = TextOverflow.Ellipsis) },
                             colors = NavigationBarItemDefaults.colors(
-                                indicatorColor = neu.accent, selectedIconColor = neu.onAccent,
+                                indicatorColor = neu.fill, selectedIconColor = neu.onFill,
                                 selectedTextColor = neu.accent, unselectedIconColor = neu.muted, unselectedTextColor = neu.muted,
                             ),
                         )
@@ -283,11 +298,11 @@ private fun WorkspaceScreen(
                 val neu = neu()
                 FloatingActionButton(
                     onClick = { taskEditorId = "" },
-                    modifier = Modifier.neumorphicRaised(neu, 18.dp, fill = neu.accent)
+                    modifier = Modifier.neumorphicRaised(neu, 18.dp, fill = neu.fill)
                         .semantics { contentDescription = "Tambah tugas" },
                     shape = RoundedCornerShape(18.dp),
-                    containerColor = neu.accent,
-                    contentColor = neu.onAccent,
+                    containerColor = neu.fill,
+                    contentColor = neu.onFill,
                     elevation = FloatingActionButtonDefaults.elevation(0.dp, 0.dp, 0.dp, 0.dp),
                 ) { TazerIcon(TazerGlyph.Add) }
             }
@@ -382,7 +397,7 @@ internal fun TimerIconButton(label: String, onClick: () -> Unit) {
 }
 
 internal enum class TazerGlyph { Tasks, Timeline, Calendar, Settings, Statistics, Timer, Previous, Next, Down, Edit, Delete, Check, Add, Camera, Image, Search, Share, CsvFile, ExcelFile,
-    Moon, Sun, Mail, Lock, Eye, EyeOff, ArrowRight, Google }
+    Moon, Sun, Mail, Lock, Eye, EyeOff, ArrowRight, Google, Gear, Back, FilterList }
 
 @Composable
 internal fun TazerIcon(glyph: TazerGlyph, description: String? = null) {
@@ -392,6 +407,7 @@ internal fun TazerIcon(glyph: TazerGlyph, description: String? = null) {
     val excel = if (dark) Color(0xFF5CC88A) else Color(0xFF1D6B40)
     val excelMark = if (dark) Color(0xFF0B2A18) else Color.White
     val accessibility = if (description == null) Modifier else Modifier.semantics { contentDescription = description }
+    val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     Canvas(Modifier.size(22.dp).then(accessibility)) {
         fun point(x: Float, y: Float) = Offset(size.width * x, size.height * y)
         fun line(x1: Float, y1: Float, x2: Float, y2: Float) {
@@ -507,6 +523,30 @@ internal fun TazerIcon(glyph: TazerGlyph, description: String? = null) {
                 }
                 line(.37f, .45f, .63f, .28f)
                 line(.37f, .55f, .63f, .72f)
+            }
+            TazerGlyph.Gear -> {
+                val center = point(.5f, .5f)
+                for (step in 0 until 8) {
+                    val angle = Math.toRadians(step * 45.0)
+                    val c = Math.cos(angle).toFloat()
+                    val sn = Math.sin(angle).toFloat()
+                    drawLine(ink, point(.5f + c * .27f, .5f + sn * .27f), point(.5f + c * .42f, .5f + sn * .42f),
+                        strokeWidth = 3.2.dp.toPx(), cap = StrokeCap.Round)
+                }
+                // Solid ring with an open hub; no blend modes so it works on any fill.
+                drawCircle(ink, size.width * .20f, center, style = Stroke(size.width * .14f))
+            }
+            TazerGlyph.Back -> {
+                // Auto-mirrored: the arrow points to the start edge in both LTR and RTL.
+                fun x(value: Float) = if (rtl) 1f - value else value
+                line(x(.22f), .5f, x(.80f), .5f)
+                line(x(.22f), .5f, x(.46f), .26f)
+                line(x(.22f), .5f, x(.46f), .74f)
+            }
+            TazerGlyph.FilterList -> {
+                line(.14f, .30f, .86f, .30f)
+                line(.26f, .50f, .74f, .50f)
+                line(.39f, .70f, .61f, .70f)
             }
             TazerGlyph.Moon -> {
                 val crescent = Path.combine(

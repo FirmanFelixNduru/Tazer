@@ -54,14 +54,17 @@ android {
         applicationId = "com.tazer.taskorganizer"
         minSdk = 26
         targetSdk = 37
-        versionCode = 15
-        versionName = "1.9.0"
+        versionCode = 16
+        versionName = "1.9.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "SUPABASE_URL", "\"$supabaseOrigin\"")
         buildConfigField("String", "SUPABASE_PUBLISHABLE_KEY", "\"$publishableKey\"")
         buildConfigField("String", "BACKEND_URL", "\"$backendOrigin\"")
         buildConfigField("boolean", "MOCK_ENABLED", "false")
         buildConfigField("String", "MOCK_URL", "\"\"")
+        // Deep links (OAuth callback, task-package import) use this scheme; debug gets its own below.
+        buildConfigField("String", "LINK_SCHEME", "\"tazer\"")
+        manifestPlaceholders["linkScheme"] = "tazer"
     }
 
     val releaseSigning = if (releaseSigningReady) {
@@ -77,6 +80,11 @@ android {
 
     buildTypes {
         debug {
+            // Separate package, FileProvider authority, label and link scheme, so debug builds and
+            // instrumented tests on the owner's phone never touch com.tazer.taskorganizer.
+            applicationIdSuffix = ".debug"
+            buildConfigField("String", "LINK_SCHEME", "\"tazer-debug\"")
+            manifestPlaceholders["linkScheme"] = "tazer-debug"
             buildConfigField("boolean", "MOCK_ENABLED", mockEnabled.toString())
             buildConfigField("String", "MOCK_URL", "\"$mockOrigin\"")
         }

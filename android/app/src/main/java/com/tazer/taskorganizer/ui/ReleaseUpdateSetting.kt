@@ -52,7 +52,7 @@ internal fun ReleaseUpdateSetting() {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text("Pembaruan aplikasi", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
         Text("Versi terpasang ${BuildConfig.VERSION_NAME}", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        OutlinedButton(enabled = !busy, onClick = {
+        PrimaryButton(enabled = !busy, onClick = {
             busy = true
             update = null
             message = null

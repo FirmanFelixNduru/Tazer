@@ -169,7 +169,11 @@ class FocusStartTest {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val automation = instrumentation.uiAutomation
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            automation.grantRuntimePermission(context.packageName, Manifest.permission.POST_NOTIFICATIONS)
+            try {
+                automation.grantRuntimePermission(context.packageName, Manifest.permission.POST_NOTIFICATIONS)
+            } catch (_: SecurityException) {
+                org.junit.Assume.assumeTrue("This device blocks shell permission grants", false)
+            }
         }
         val runtime = FocusRuntime.get(context)
         val room = TaskRepository(TazerDatabase.getInstance(context))
@@ -183,14 +187,18 @@ class FocusStartTest {
         ) as MainActivity
         var taskId: String? = null
         fun find(root: AccessibilityNodeInfo?, text: String): AccessibilityNodeInfo? {
-            if (root == null || !root.isVisibleToUser) return null
+            if (root == null) return null
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) root.refresh() // no clearCache() before API 34
+            if (!root.isVisibleToUser) return null
             if (root.text?.toString() == text || root.contentDescription?.toString() == text) return root
             for (index in 0 until root.childCount) find(root.getChild(index), text)?.let { return it }
             return null
         }
         fun node(text: String): AccessibilityNodeInfo? {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) automation.clearCache()
-            return find(automation.rootInActiveWindow, text)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) automation.clearCache()
+            // Never read or tap another app's window (the owner's daily Tazer may surface between tests).
+            val root = automation.rootInActiveWindow?.takeIf { it.packageName?.toString() == context.packageName } ?: return null
+            return find(root, text)
         }
         fun cutoffAlarm(session: WorkSession) = PendingIntent.getBroadcast(
             context, 0, FocusEvent(session, FocusEventKind.CUTOFF).receiverIntent(context),

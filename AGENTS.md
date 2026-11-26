@@ -75,10 +75,11 @@ Tazer/
 
 ## Perangkat uji
 
-1. Utamakan HP fisik owner (saat ini `f27c063e` / `CPH2375`) bila terhubung lewat ADB. Jangan menyalakan emulator QEMU selama HP itu tersedia, agar RAM laptop tetap lega. Pakai emulator hanya untuk tes yang memang membutuhkannya, misalnya reboot atau upgrade dari instalasi bersih. Setelah selesai, matikan dengan `adb -s emulator-5554 emu kill`.
+1. Perangkat uji default adalah HP fisik owner (saat ini `f27c063e` / `CPH2375`) lewat ADB. Selama HP itu terhubung, emulator QEMU tidak dinyalakan sama sekali agar RAM laptop tetap lega. Emulator hanya dipakai bila HP tidak tersedia, dan langsung dimatikan dengan `adb -s emulator-5554 emu kill` setelah selesai.
 2. Saat lebih dari satu perangkat terhubung, setiap perintah `adb` wajib memakai `-s <serial>`, dan Gradle memakai `ANDROID_SERIAL=<serial>`. Dengan begitu `connectedDebugAndroidTest` tidak pernah berjalan di perangkat yang salah.
 3. Di HP fisik owner, `adb reboot`, `adb uninstall com.tazer.taskorganizer`, `adb shell pm clear com.tazer.taskorganizer`, serta perubahan setelan sistem (DND, jam, zona) tanpa pemulihan **dilarang**. APK release hanya boleh dipasang dengan `adb -s <serial> install -r` (upgrade in-place), dan verifikasi visual memakai `adb -s <serial> exec-out screencap -p`.
-4. Tes instrumented di HP fisik hanya boleh berjalan setelah build debug memakai `applicationIdSuffix = ".debug"` beserta authority FileProvider dan deep link yang ikut terpisah, sehingga aplikasi harian owner tetap terisolasi. Sebelum itu, tes instrumented dijalankan di emulator.
+4. Build debug memakai `applicationIdSuffix = ".debug"` (`com.tazer.taskorganizer.debug`, label "Tazer Debug"), authority FileProvider `${applicationId}.scan`, dan skema deep link `tazer-debug://`. Dengan begitu `connectedDebugAndroidTest` di HP fisik terisolasi dari aplikasi harian owner. Setelah tes, hapus hanya `com.tazer.taskorganizer.debug` dan `com.tazer.taskorganizer.debug.test`.
+5. Tes yang butuh reboot nyata tidak dijalankan di HP pribadi. Logika boot dan pemulihan diuji lewat tes unit/instrumented tanpa reboot, dan keterbatasan ini dicatat di handoff.
 
 ## Handoff `i-have-adhd`
 

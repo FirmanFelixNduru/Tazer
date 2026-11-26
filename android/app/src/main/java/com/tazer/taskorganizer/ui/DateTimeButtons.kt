@@ -1,5 +1,6 @@
 package com.tazer.taskorganizer.ui
 
+import androidx.compose.foundation.layout.RowScope
 import android.app.DatePickerDialog
 import android.content.DialogInterface
 import android.content.res.ColorStateList
@@ -13,7 +14,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -38,12 +38,13 @@ private fun platformTheme(dark: Boolean) =
 
 @Composable
 internal fun PickerDateButton(
-    day: LocalDate, enabled: Boolean, label: String = DayFormat.format(day), onSelected: (LocalDate) -> Unit,
+    day: LocalDate, enabled: Boolean, label: String = DayFormat.format(day), prominent: Boolean = false,
+    onSelected: (LocalDate) -> Unit,
 ) {
     val context = LocalContext.current
     val dark = LocalTazerDark.current
     val colors = MaterialTheme.colorScheme
-    OutlinedButton(enabled = enabled, onClick = {
+    PickerButton(prominent, enabled, Modifier, onClick = {
         DatePickerDialog(ContextThemeWrapper(context, platformTheme(dark)), { _, year, month, date ->
             onSelected(LocalDate.of(year, month + 1, date))
         }, day.year, day.monthValue - 1, day.dayOfMonth).apply {
@@ -75,12 +76,19 @@ internal fun PickerDateButton(
     }) { Text(label) }
 }
 
+/** Outlined by default; [prominent] pickers (task Deadline) use the royal-blue primary fill. */
 @Composable
-internal fun PickerTimeButton(minute: Int, enabled: Boolean, onSelected: (Int) -> Unit) {
+private fun PickerButton(prominent: Boolean, enabled: Boolean, modifier: Modifier, onClick: () -> Unit, content: @Composable RowScope.() -> Unit) {
+    if (prominent) PrimaryButton(onClick, modifier, enabled, content)
+    else OutlinedButton(onClick = onClick, modifier = modifier, enabled = enabled, content = content)
+}
+
+@Composable
+internal fun PickerTimeButton(minute: Int, enabled: Boolean, prominent: Boolean = false, onSelected: (Int) -> Unit) {
     var selecting by rememberSaveable { mutableStateOf(false) }
-    OutlinedButton(
-        onClick = { selecting = true }, enabled = enabled,
-        modifier = Modifier.semantics { contentDescription = "Pilih jam " + formatMinute(minute) },
+    PickerButton(
+        prominent, enabled, Modifier.semantics { contentDescription = "Pilih jam " + formatMinute(minute) },
+        onClick = { selecting = true },
     ) { Text(formatMinute(minute)) }
     if (selecting) TimeSpinner(minute, { selecting = false }) {
         onSelected(it)
@@ -101,7 +109,7 @@ private fun TimeSpinner(minute: Int, close: () -> Unit, onSelected: (Int) -> Uni
                 NumberWheel("Menit", minutes, 59) { minutes = it }
             }
         },
-        confirmButton = { Button(onClick = { onSelected(hour * 60 + minutes) }) { Text("Terapkan") } },
+        confirmButton = { PrimaryButton(onClick = { onSelected(hour * 60 + minutes) }) { Text("Terapkan") } },
         dismissButton = { OutlinedButton(onClick = close) { Text("Batal") } },
     )
 }

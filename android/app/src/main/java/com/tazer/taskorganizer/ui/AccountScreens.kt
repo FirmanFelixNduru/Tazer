@@ -384,7 +384,7 @@ private fun ByokForm(state: TazerState, model: TazerViewModel) {
     FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         ByokProvider.entries.forEach { candidate ->
             if (providerName == candidate.name) {
-                Button(onClick = {}, enabled = false) { Text(candidate.name + " dipilih") }
+                PrimaryButton(onClick = {}, enabled = false) { Text(candidate.name + " dipilih") }
             } else {
                 OutlinedButton(onClick = { providerName = candidate.name }, enabled = !state.busy) { Text(candidate.name) }
             }
@@ -395,7 +395,7 @@ private fun ByokForm(state: TazerState, model: TazerViewModel) {
     SecretField(key, { key = it }, "Kunci API", !state.busy, Modifier.fillMaxWidth())
     if (hasKey) Text("Kunci tersimpan di perangkat.")
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Button(onClick = {
+        PrimaryButton(onClick = {
             model.saveByok(ByokProvider.valueOf(providerName), modelName, key) { key = ""; hasKey = true }
         }, enabled = !state.busy && modelName.isNotBlank() && key.isNotBlank()) { Text("Simpan kunci") }
         if (hasKey) OutlinedButton(onClick = {

@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -163,7 +162,7 @@ internal fun DataBackupSetting(busy: Boolean, model: TazerViewModel) {
             },
             confirmButton = {
                 if (counts.totalNew > 0 || ready.profileChanges) {
-                    Button(onClick = { model.restoreBackup(ready) { preview = null } }, enabled = !busy) { Text("Pulihkan") }
+                    PrimaryButton(onClick = { model.restoreBackup(ready) { preview = null } }, enabled = !busy) { Text("Pulihkan") }
                 }
             },
             dismissButton = {

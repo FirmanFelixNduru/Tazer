@@ -82,6 +82,12 @@ Tempel awalan itu sebelum instruksi peran. Lead memakai model yang ditetapkan pa
 2. Di JVM, uji kontras token neumorphic dan warna mata kuliah di kanvas baru. Di emulator API 37, uji tombol `+` yang kini ada di Kalender (menggantikan "Tambah acara" dan tidak ada di Jadwal), login dengan Sign In, Sign Up, Remember Me, Forgot Password?, dan Continue with Google tanpa Discord/Facebook, render neumorphic Light dan Dark (piksel kanvas, gradien, dan bayangan), serta seluruh tes regresi. Backend tetap 31/31.
 3. Build APK signed 1.9.0 kode 15 dengan keystore yang sama, lalu jalankan `apksigner verify`, lint debug/release dengan 0 error, dan secret scan riwayat Git serta APK. Uji upgrade in-place dari 1.8.0 (sesi, tugas, acara, jadwal tetap, tema, dan widget), smoke test Light dan Dark dengan screenshot komposit, publikasikan rilis, lalu verifikasi Cek Update dari 1.8.0.
 
+## Gate rilis 1.9.1
+
+1. Terapkan polish hasil uji owner di HP: empat tab ditambah gerigi Pengaturan, Back berupa ikon biru, segmen Light/Dark/System, kolom cari ramping, panel Filter (mata kuliah, kesulitan, deadline, durasi, urutan, sub-tugas, live count, Reset), inset kartu tugas, dan highlight biru untuk aksi utama ([spesifikasi UI](UI_NEUMORPHIC_SPEC.md#polish-v191)).
+2. Build debug memakai `applicationIdSuffix ".debug"` (`com.tazer.taskorganizer.debug`, label Tazer Debug, skema `tazer-debug://`, FileProvider `${applicationId}.scan`). Tes instrumented berjalan di HP fisik owner, lalu paket `.debug` dan `.debug.test` dihapus. Tes JVM mencakup multi-filter dan sort.
+3. Build APK signed 1.9.1 kode 16, lalu jalankan lint, `apksigner verify`, dan secret scan. Uji upgrade in-place 1.9.0 → 1.9.1 di HP owner hanya dengan `install -r`, ambil screenshot Light dan Dark, lalu publikasikan rilis.
+
 ## Template handoff
 
 1. **Wave [N] — Langkah [X] dari [Y] (~[Z] menit).** [Aksi atau hasil inti, model dan effort aktual.]

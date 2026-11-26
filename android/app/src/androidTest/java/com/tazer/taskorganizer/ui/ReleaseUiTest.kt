@@ -86,11 +86,11 @@ class ReleaseUiTest {
     fun settingsShowsInstalledVersionAndUpdateCheckReturnsAStatus() {
         try {
             launch()
-            waitFor("Settings unavailable") { clickText("Pengaturan") }
+            waitFor("Settings unavailable") { findText("Tema") != null || (clickText("Pengaturan") && false) }
             waitFor("Installed version missing") { findText("Versi terpasang ${BuildConfig.VERSION_NAME}") != null }
-            waitFor("Update check could not be tapped") { clickText("Cek Update") }
+            waitFor("Update check could not be tapped") { clickVisible("Cek Update") }
             waitFor("Update check did not return a result") {
-                if (Build.VERSION.SDK_INT >= 33) automation.clearCache()
+                if (Build.VERSION.SDK_INT >= 34) automation.clearCache()
                 nodes {
                     val value = it.text?.toString().orEmpty()
                     value.startsWith("Pembaruan belum bisa diperiksa.") || value == "Rilis publik belum tersedia." ||
@@ -111,7 +111,7 @@ class ReleaseUiTest {
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
             waitFor("Google sign-in is missing or disabled") {
                 var node = findText("Continue with Google")
-                while (node != null && !node.isClickable) node = node.parent
+                while (node != null && !node.isClickable) node = node.up
                 node?.isEnabled == true
             }
         } finally {
@@ -149,7 +149,7 @@ class ReleaseUiTest {
                         kotlin.math.abs((expected shr shift and 0xFF) - (canvas shr shift and 0xFF)) <= 24
                     })
                     var button: AccessibilityNodeInfo? = signIn
-                    while (button != null && !button.isClickable) button = button.parent
+                    while (button != null && !button.isClickable) button = button.up
                     val pill = bounds(requireNotNull(button))
                     val fill = screenshot.getPixel(pill.left + pill.width() / 5, pill.centerY())
                     assertTrue("Sign In is a royal-blue gradient", (fill and 0xFF) > (fill shr 16 and 0xFF) + 60)
@@ -178,12 +178,12 @@ class ReleaseUiTest {
         try {
             launch()
             for (mode in TazerThemeMode.entries) {
-                waitFor("Settings unavailable") { clickText("Pengaturan") }
+                waitFor("Settings unavailable") { findText("Tema") != null || (clickText("Pengaturan") && false) }
                 waitFor("Theme choice ${mode.label} unavailable") { clickText(mode.label) }
                 waitFor("Theme choice was not saved") { ThemePreference(context).read() == mode }
                 finish()
                 launch()
-                waitFor("Settings unavailable after restart") { clickText("Pengaturan") }
+                waitFor("Settings unavailable after restart") { findText("Tema") != null || (clickText("Pengaturan") && false) }
                 waitFor("${mode.label} was not selected after restart") { isChoiceSelected(mode.label) }
                 assertEquals(mode, ThemePreference(context).read())
             }
@@ -219,7 +219,7 @@ class ReleaseUiTest {
                 launch()
                 waitFor("Statistics navigation unavailable") { clickText("Statistik") }
                 waitFor("Weekly chart did not open") {
-                    if (Build.VERSION.SDK_INT >= 33) automation.clearCache()
+                    if (Build.VERSION.SDK_INT >= 34) automation.clearCache()
                     findText("Fokus harian") != null
                 }
                 val screenshot = requireNotNull(automation.takeScreenshot())
@@ -254,7 +254,7 @@ class ReleaseUiTest {
         val policyAccess = focus.hasDndAccess()
         if (policyAccess) setDndTestAccess(false)
         try {
-            waitFor("Settings unavailable") { clickText("Pengaturan") }
+            waitFor("Settings unavailable") { findText("Tema") != null || (clickText("Pengaturan") && false) }
             waitFor("Focus settings button unavailable") { clickVisible("Pengaturan fokus") }
             waitFor("Focus settings dialog did not open") { findText("Durasi fokus dan jeda") != null }
             val pomodoro = "Pomodoro · 25 mnt fokus, 5 mnt jeda"
@@ -263,7 +263,7 @@ class ReleaseUiTest {
                 waitFor("DND opt-in unavailable") { clickText("Jangan Ganggu saat fokus") || scrollUp() }
             }
             waitFor("DND permission explanation missing") {
-                if (Build.VERSION.SDK_INT >= 33) automation.clearCache()
+                if (Build.VERSION.SDK_INT >= 34) automation.clearCache()
                 findText("Buka akses Jangan Ganggu") != null || scrollUp()
             }
             assertEquals(android.provider.Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS, focus.dndSettingsIntent().action)
@@ -278,7 +278,7 @@ class ReleaseUiTest {
             assertTrue(focus.focusSettings().dndEnabled)
             waitFor("Schedule navigation unavailable") { clickText("Jadwal") }
             waitFor("Schedule did not show the selected rhythm") {
-                if (Build.VERSION.SDK_INT >= 33) automation.clearCache()
+                if (Build.VERSION.SDK_INT >= 34) automation.clearCache()
                 findText("Pomodoro · 25 mnt fokus · 5 mnt jeda") != null
             }
         } finally {
@@ -396,7 +396,7 @@ class ReleaseUiTest {
             waitFor("Back unavailable") { clickText("Kembali") }
 
             waitFor("Calendar did not come back") { navigationSelected("Kalender") }
-            waitFor("Settings unavailable") { clickText("Pengaturan") }
+            waitFor("Settings unavailable") { findText("Tema") != null || (clickText("Pengaturan") && false) }
             var focusButtons = 0
             repeat(12) {
                 assertEquals("Settings no longer manages weekly schedules", null, findText("Tambah jadwal tetap"))
@@ -408,6 +408,59 @@ class ReleaseUiTest {
             assertEquals("Focus settings appear exactly once in Settings", 1, focusButtons)
         } finally {
             finish()
+        }
+    }
+
+    @Test
+    fun fourTabBarGearBackAndPrimaryActionsUseTheRoyalBlueFillInLightAndDark() {
+        val preference = ThemePreference(context)
+        val original = preference.read()
+        fun isRoyalBlue(color: Int) = (color and 0xFF) > 200 && (color shr 16 and 0xFF) < 90 && (color shr 8 and 0xFF) < 140
+        fun fillAt(node: AccessibilityNodeInfo): Int {
+            val rect = bounds(node)
+            val shot = requireNotNull(automation.takeScreenshot())
+            try { return shot.getPixel(rect.left + 8, rect.centerY()) } finally { shot.recycle() }
+        }
+        fun clickable(node: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
+            var current = node
+            while (current != null && !current.isClickable) current = current.up
+            return current
+        }
+        try {
+            for (mode in listOf(TazerThemeMode.LIGHT, TazerThemeMode.DARK)) {
+                preference.save(mode)
+                launch()
+                val bar = bottomBar()
+                val tabs = nodes { it.text?.toString() in setOf("Jadwal", "Tugas", "Kalender", "Statistik", "Pengaturan") && bounds(it).top >= bar.top }
+                    .sortedBy { bounds(it).left }.map { it.text.toString() }
+                assertEquals("Bottom bar keeps four tabs", listOf("Jadwal", "Tugas", "Kalender", "Statistik"), tabs)
+                val gear = requireNotNull(find { it.contentDescription?.toString() == "Pengaturan" })
+                val minimum = 48 * context.resources.displayMetrics.density - 1
+                assertTrue("Gear target is 48 dp", bounds(gear).width() >= minimum && bounds(gear).height() >= minimum)
+                assertTrue("Gear uses the royal-blue fill in ${mode.label}", isRoyalBlue(fillAt(gear)))
+                waitFor("Gear did not open Settings") { clickText("Pengaturan") && findText("Tema") != null }
+                if (mode == TazerThemeMode.LIGHT) {
+                    waitFor("Theme segments missing") { findText("System") != null }
+                    assertEquals(null, findText("System Default"))
+                }
+                val back = requireNotNull(find { it.contentDescription?.toString() == "Kembali" })
+                assertTrue("Back uses the royal-blue fill in ${mode.label}", isRoyalBlue(fillAt(back)))
+                waitFor("Back did not return to Tugas") { clickText("Kembali") && findText("Belum Selesai") != null }
+                waitFor("Add task unavailable") { clickText("Tambah tugas") }
+                waitFor("Editor did not open") { findText("Deadline") != null || gentleScroll() }
+                val time = waitForNode("Deadline time button missing") { clickable(find { it.contentDescription?.toString()?.startsWith("Pilih jam") == true }) }
+                assertTrue("Deadline time is royal blue in ${mode.label}", isRoyalBlue(fillAt(time)))
+                val date = waitForNode("Deadline date button missing") {
+                    clickable(find { Regex("^\\p{L}{3}, \\d{1,2} ").containsMatchIn(it.text?.toString().orEmpty()) })
+                }
+                assertTrue("Deadline date is royal blue in ${mode.label}", isRoyalBlue(fillAt(date)))
+                val importButton = waitForNode("Impor Paket Tugas missing") { clickable(findText("Impor Paket Tugas")) ?: run { gentleScroll(upward = true); null } }
+                assertTrue("Impor Paket Tugas is royal blue in ${mode.label}", isRoyalBlue(fillAt(importButton)))
+                finish()
+            }
+        } finally {
+            finish()
+            preference.save(original)
         }
     }
 
@@ -514,7 +567,7 @@ class ReleaseUiTest {
                 waitFor("Picker for $option not requested") { monitor.hits > 0 }
                 waitFor("Unified preview for $option missing") { nodes { it.text?.toString()?.startsWith("Pratinjau impor") == true }.isNotEmpty() }
                 check()
-                waitFor("$saveLabel unavailable") { clickText(saveLabel) }
+                waitFor("$saveLabel unavailable") { clickVisible(saveLabel) }
                 waitFor("Preview did not close") { nodes { it.text?.toString()?.startsWith("Pratinjau impor") == true }.isEmpty() }
             } finally {
                 instrumentation.removeMonitor(monitor)
@@ -666,14 +719,16 @@ class ReleaseUiTest {
             val labels = listOf("Edit tugas $title", "Tandai selesai $title", "Hapus tugas $title")
             waitFor("Task icon labels missing") { labels.all { actionFor(it) != null } || gentleScroll() }
             val minimum = 48 * context.resources.displayMetrics.density
-            assertTrue(labels.map { bounds(requireNotNull(actionFor(it))) }.all {
-                it.width() >= minimum - 1 && it.height() >= minimum - 1
-            })
+            // Bounds are clipped at the screen edge, so bring the whole action row into view before measuring.
+            waitFor("Task actions are smaller than 48 dp") {
+                labels.all { label -> actionFor(label)?.let(::bounds)?.let { it.width() >= minimum - 1 && it.height() >= minimum - 1 } == true } ||
+                    gentleScroll()
+            }
             assertTrue("Edit action was rejected",
                 requireNotNull(actionFor(labels[0])).performAction(AccessibilityNodeInfo.ACTION_CLICK))
             waitFor("Editor did not open for $title") {
                 // UiAutomation can retain the old Compose task list after navigation on API 37.
-                if (Build.VERSION.SDK_INT >= 33) automation.clearCache()
+                if (Build.VERSION.SDK_INT >= 34) automation.clearCache()
                 findText("Edit tugas") != null && find { it.isEditable && it.text?.toString() == title } != null
             }
             waitFor("Edit back button did not accept a tap") { clickText("Kembali") }
@@ -705,7 +760,7 @@ class ReleaseUiTest {
 
     private fun actionFor(text: String): AccessibilityNodeInfo? {
         var node = findText(text)
-        while (node != null && !node.isClickable) node = node.parent
+        while (node != null && !node.isClickable) node = node.up
         return node
     }
 
@@ -785,12 +840,12 @@ class ReleaseUiTest {
     fun dailyBriefingSettingsUseSpinnersPersistAndScheduleAlarms() = runBlocking {
         val preferences = BriefingPreferences(context)
         val original = preferences.read()
-        automation.grantRuntimePermission(context.packageName, Manifest.permission.POST_NOTIFICATIONS)
+        grantNotificationsOrSkip()
         preferences.save(BriefingSettings())
         DailyBriefingAlarms.reschedule(context)
         try {
             launch()
-            waitFor("Settings unavailable") { clickText("Pengaturan") }
+            waitFor("Settings unavailable") { findText("Tema") != null || (clickText("Pengaturan") && false) }
             waitFor("Daily Briefing section missing") { findText("Smart Daily Briefing") != null }
             assertTrue(!DailyBriefingAlarms.scheduled(context, BriefingKind.MORNING))
             waitFor("Morning switch unavailable") { tapSwitch("Briefing pagi") }
@@ -807,7 +862,7 @@ class ReleaseUiTest {
             }
             // Let the dialog finish its enter animation so the wheel bounds are final before tapping.
             SystemClock.sleep(700)
-            if (Build.VERSION.SDK_INT >= 33) automation.clearCache()
+            if (Build.VERSION.SDK_INT >= 34) automation.clearCache()
             // The left wheel is the hour; tapping below its centre increments it like a user would.
             val hour = bounds(nodes { it.className?.toString() == "android.widget.NumberPicker" }.minBy { bounds(it).left })
             tap(hour.exactCenterX(), hour.top + hour.height() * .82f)
@@ -817,7 +872,7 @@ class ReleaseUiTest {
 
             finish()
             launch()
-            waitFor("Settings unavailable after restart") { clickText("Pengaturan") }
+            waitFor("Settings unavailable after restart") { findText("Tema") != null || (clickText("Pengaturan") && false) }
             waitFor("Saved morning time missing after restart") { findText("Pilih jam 08:00") != null }
             assertTrue("Morning switch lost its state", switchChecked("Briefing pagi"))
             waitFor("Evening switch unavailable") { tapSwitch("Review malam") }
@@ -841,7 +896,7 @@ class ReleaseUiTest {
         val preferences = BriefingPreferences(context)
         val original = preferences.read()
         val manager = context.getSystemService(NotificationManager::class.java)
-        automation.grantRuntimePermission(context.packageName, Manifest.permission.POST_NOTIFICATIONS)
+        grantNotificationsOrSkip()
         try {
             launch() // Establishes the demo owner used by the background briefing.
             preferences.save(BriefingSettings(morningEnabled = true, eveningEnabled = true))
@@ -895,12 +950,26 @@ class ReleaseUiTest {
                 findText("Cari $tag laporan") != null && findText("Cari $tag esai") == null
             }
             setText("Cari tugas", tag)
-            waitFor("Course chip missing") { clickVisible("Sastra $tag", upward = true) }
+            assertEquals("Difficulty chips moved into the Filter panel", null, findText("Kesulitan"))
+            waitFor("Filter button missing") { clickText("Filter") }
+            waitFor("Filter panel missing") { findText("Filter tugas") != null }
+            waitFor("Live count missing") { findText("Tampilkan 2 Tugas") != null }
+            waitFor("Course chip missing") { clickVisible("Mata kuliah Sastra $tag") }
+            waitFor("Live count did not follow the course") { findText("Tampilkan 1 Tugas") != null }
+            waitFor("Apply unavailable") { clickText("Tampilkan 1 Tugas") }
+            waitFor("Filter panel did not close") { findText("Filter tugas") == null }
             waitFor("Course filter did not apply") { findText("Cari $tag esai") != null && findText("Cari $tag laporan") == null }
+            waitFor("Active filter badge missing") { findText("Filter tugas") != null || (clickVisible("Filter, 1 aktif") && false) }
             waitFor("Difficulty chip missing") { clickVisible("Kesulitan 5") }
+            waitFor("Live count did not drop to zero") { findText("Tampilkan 0 Tugas") != null }
+            waitFor("Apply unavailable") { clickText("Tampilkan 0 Tugas") }
+            waitFor("Filter panel did not close") { findText("Filter tugas") == null }
             waitFor("Informative empty state missing") { findText("Tidak ada tugas aktif yang cocok") != null }
-            waitFor("Reset unavailable") { clickVisible("Reset filter") }
-            waitFor("Reset did not restore the list") { findText("Cari $tag laporan") != null }
+            waitFor("Filter button missing") { findText("Filter tugas") != null || (clickVisible("Filter, 2 aktif") && false) }
+            waitFor("Panel Reset unavailable") { clickText("Reset") }
+            waitFor("Reset kept the search and cleared the filters") { findText("Tampilkan 2 Tugas") != null }
+            waitFor("Apply unavailable") { clickText("Tampilkan 2 Tugas") }
+            waitFor("Reset did not restore the list") { findText("Cari $tag laporan") != null && findText("Cari $tag esai") != null }
             waitFor("Done tab unavailable") { clickText("Selesai") }
             setText("Cari tugas", "stoikiometri $tag")
             waitFor("Search did not work on the done tab") { findText("Cari $tag kuis") != null }
@@ -976,7 +1045,7 @@ class ReleaseUiTest {
                 monitor(Intent.ACTION_CREATE_DOCUMENT, "application/json", backup),
                 monitor(Intent.ACTION_OPEN_DOCUMENT, "*/*", backup),
             )
-            waitFor("Settings unavailable") { clickText("Pengaturan") }
+            waitFor("Settings unavailable") { findText("Tema") != null || (clickText("Pengaturan") && false) }
             waitFor("ICS export unavailable", 30_000L) { clickVisible("Ekspor .ics") }
             waitFor("ICS file was not written") { ics.length() > 0 }
             val calendar = ics.readText()
@@ -1045,7 +1114,9 @@ class ReleaseUiTest {
             sourceId = null
 
             val link = Regex("tazer://import-task\\?d=[A-Za-z0-9_-]+").find(text)!!.value
-            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(link)).setPackage(context.packageName)
+            // The debug build registers its own scheme, so the shared tazer:// link is opened as tazer-debug://.
+            val opened = link.replaceFirst("tazer://", BuildConfig.LINK_SCHEME + "://")
+            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(opened)).setPackage(context.packageName)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP))
             waitFor("Package preview missing") { findText("Pratinjau paket tugas") != null && findText("Paket $tag") != null }
             for (expected in listOf("Kelompok $tag", "Kesulitan 4/5 · Estimasi 90 menit", "Subtask (3)", "2. Buat slide")) {
@@ -1094,7 +1165,7 @@ class ReleaseUiTest {
     private fun setText(label: String, value: String) {
         waitFor("Text field $label missing") {
             val field = find { (it.contentDescription?.toString() == label || hasText(it, label)) && it.isEditable }
-                ?: generateSequence(find { it.text?.toString() == label || it.contentDescription?.toString() == label }) { it.parent }
+                ?: generateSequence(find { it.text?.toString() == label || it.contentDescription?.toString() == label }) { it.up }
                     .firstOrNull { it.isEditable }
             field?.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, android.os.Bundle().apply {
                 putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, value)
@@ -1126,17 +1197,36 @@ class ReleaseUiTest {
         it.isCheckable && (it.text?.toString()?.contains(label) == true || hasText(it, label))
     }.firstOrNull()
     private fun navigationSelected(label: String): Boolean {
-        if (Build.VERSION.SDK_INT >= 33) automation.clearCache() // Selection changes do not always refresh cached nodes.
-        return nodes { it.text?.toString() == label }.any { node -> generateSequence(node) { it.parent }.any { it.isSelected } }
+        if (Build.VERSION.SDK_INT >= 34) automation.clearCache() // Selection changes do not always refresh cached nodes.
+        return nodes { it.text?.toString() == label }.any { node -> generateSequence(node) { it.up }.any { it.isSelected } }
     }
     /** Scrolls until the target is on screen, then clicks it through accessibility, independent of position. */
     private fun clickVisible(text: String, upward: Boolean = false): Boolean {
         var node = find { it.text?.toString() == text || it.contentDescription?.toString() == text } ?: return gentleScroll(upward)
-        while (!node.isClickable) node = node.parent ?: return false
+        while (!node.isClickable) node = node.up ?: return false
         return node.isEnabled && node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
     }
     private fun tapSwitch(label: String): Boolean = switchNode(label)?.let(::tapNode) == true
     private fun switchChecked(label: String): Boolean = switchNode(label)?.isChecked == true
+
+    /** ColorOS and similar builds refuse shell permission grants unless the owner changes a developer option. */
+    private fun grantNotificationsOrSkip() {
+        try {
+            automation.grantRuntimePermission(context.packageName, Manifest.permission.POST_NOTIFICATIONS)
+        } catch (_: SecurityException) {
+            assumeTrue("This device blocks shell permission grants; notification checks need an emulator or a device that allows them", false)
+        }
+    }
+
+    /** Parent node, refreshed before API 34 so bounds and enabled state are not read from a stale cache. */
+    private val AccessibilityNodeInfo.up: AccessibilityNodeInfo?
+        get() = parent?.also { if (Build.VERSION.SDK_INT < 34) it.refresh() }
+
+    private fun waitForNode(message: String, find: () -> AccessibilityNodeInfo?): AccessibilityNodeInfo {
+        var found: AccessibilityNodeInfo? = null
+        waitFor(message) { found = find(); found != null }
+        return requireNotNull(found)
+    }
 
     private fun waitFor(message: String, timeoutMs: Long = 12_000L, condition: () -> Boolean) {
         val deadline = SystemClock.elapsedRealtime() + timeoutMs
@@ -1151,11 +1241,17 @@ class ReleaseUiTest {
     private fun nodes(predicate: (AccessibilityNodeInfo) -> Boolean): List<AccessibilityNodeInfo> {
         val result = mutableListOf<AccessibilityNodeInfo>()
         fun visit(node: AccessibilityNodeInfo?) {
-            if (node == null || !node.isVisibleToUser) return
+            if (node == null) return
+            // Before API 34 there is no clearCache(); refresh() bypasses the cache so Compose text updates show.
+            if (Build.VERSION.SDK_INT < 34) node.refresh()
+            if (!node.isVisibleToUser) return
             if (predicate(node)) result.add(node)
             for (i in 0 until node.childCount) visit(node.getChild(i))
         }
-        visit(automation.rootInActiveWindow)
+        // Only our own window: on the owner's phone the daily Tazer can surface between tests and must never be touched.
+        val root = automation.rootInActiveWindow ?: return result
+        if (root.packageName?.toString() != context.packageName) return result
+        visit(root)
         return result
     }
 
@@ -1167,7 +1263,7 @@ class ReleaseUiTest {
         var node = findText(label)
         while (node != null) {
             if (node.isChecked || node.isSelected) return true
-            node = node.parent
+            node = node.up
         }
         return false
     }
@@ -1181,16 +1277,16 @@ class ReleaseUiTest {
     private fun bounds(node: AccessibilityNodeInfo) = Rect().also { node.getBoundsInScreen(it) }
     /** Bounds of the floating bottom bar: the first ancestor of the "Tugas" tab label that spans most of the width. */
     private fun bottomBar(): Rect {
-        if (Build.VERSION.SDK_INT >= 33) automation.clearCache()
+        if (Build.VERSION.SDK_INT >= 34) automation.clearCache()
         val width = context.resources.displayMetrics.widthPixels
         val label = nodes { it.text?.toString() == "Tugas" }.maxBy { bounds(it).top }
-        return requireNotNull(generateSequence(label) { it.parent }.map(::bounds).firstOrNull { it.width() > width * 0.8 }) {
+        return requireNotNull(generateSequence(label) { it.up }.map(::bounds).firstOrNull { it.width() > width * 0.8 }) {
             "Bottom bar missing"
         }
     }
     private fun tapNode(node: AccessibilityNodeInfo): Boolean {
         var target: AccessibilityNodeInfo? = node
-        while (target != null && !target.isClickable) target = target.parent
+        while (target != null && !target.isClickable) target = target.up
         if (target?.isEnabled != true) return false
         val rect = bounds(target)
         tap(rect.exactCenterX(), rect.exactCenterY())

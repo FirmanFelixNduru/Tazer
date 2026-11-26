@@ -109,13 +109,13 @@ class MainActivity : ComponentActivity() {
                 scheduleRequest = STATISTICS_REQUEST
                 model.restoreSession()
             }
-            uri?.scheme == "tazer" && uri.host == "import-task" -> {
+            uri?.scheme == BuildConfig.LINK_SCHEME && uri.host == "import-task" -> {
                 intent.data = null
                 // Shown for review once a workspace is open; nothing is saved without confirmation.
                 model.restoreSession()
                 model.reviewPackage(uri.toString())?.let(model::showMessage)
             }
-            uri?.scheme == "tazer" -> {
+            uri?.scheme == BuildConfig.LINK_SCHEME -> {
                 intent.data = null
                 model.handleAuthCallback(uri)
             }

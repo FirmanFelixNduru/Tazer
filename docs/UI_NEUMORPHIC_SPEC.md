@@ -19,7 +19,8 @@ Implementasinya ada di `android/app/src/main/java/com/tazer/taskorganizer/ui/Neu
 | `outline` | `#76839F` | `#64708A` | Batas komponen interaktif |
 | `outlineVariant` | `#7A86A1` | `#616D88` | Batas tombol outlined Material dan pemisah |
 | `accent` | `#2254E6` | `#4F94FF` | Royal blue: tab aktif, tombol `+`, FAB, dan teks tautan |
-| `onAccent` | `#FFFFFF` | `#08142E` | Label di atas `accent` |
+| `onAccent` | `#FFFFFF` | `#08142E` | Label di atas `accent` (checkbox Remember Me) |
+| `fill` (v1.9.1) | `#2254E6` | `#2D66EB` | Fill biru royal untuk aksi utama, segmen aktif, tab aktif, gerigi, Back, `+`, dan FAB, selalu dengan teks/ikon putih (6,04:1 dan 4,99:1) |
 | Gradien Sign In | `#2B82FF → #2254E6 → #3B38D6` | sama | Tombol utama login, dengan label putih di tengah |
 
 Warna mata kuliah (10 slot, v1.7.0) tidak berubah. `TaskSearchAndColorsTest` membuktikan titik warna tetap 3:1 dan label chip 4,5:1 di atas `canvas` dan `surface` kedua tema.
@@ -56,6 +57,14 @@ Komponen bersama: `NeuCard` (kartu timbul radius 20 dp, garis `outline` 35%), `N
 | Pengaturan | Setiap grup menjadi `NeuCard` dengan urutan yang sama seperti sebelumnya. Pilihan tema memakai segmented Light, Dark, dan System Default. |
 | Bottom bar | Pill timbul melayang dengan item aktif berisi `accent`. |
 | Widget | `focus_widget.xml` memakai `canvas`, `ink`, dan `muted` kedua tema. Override warna dinamis API 31+ dihapus, dan hanya radius sudut sistem yang dipakai. |
+
+## Polish v1.9.1
+
+1. **Navigasi.** Bottom bar berisi empat tab: Jadwal, Tugas, Kalender, Statistik. Tugas tetap layar pembuka. Pengaturan dibuka dari tombol gerigi `fill` 48 dp di kanan atas top bar (`contentDescription` "Pengaturan"), dan kembali ke tab asal lewat tombol Back. Bar punya inset horizontal 10 dp agar pill tab tepi tidak menyentuh lengkung bar.
+2. **Back.** Tombol teks "Kembali" diganti `NeuFillIconButton` 48 dp: fill biru, panah putih yang otomatis dicerminkan saat RTL, `contentDescription` "Kembali". Ini berlaku di Pengaturan, Acara, Jadwal Tetap, Timer fokus, dan formulir tugas. Panah digambar sebagai glyph `TazerGlyph.Back` tanpa pustaka ikon baru.
+3. **Tema.** Segmen menjadi Light | Dark | System. Pill aktif radius 22 dp, konsentris dengan track 26 dp yang berinset 4 dp.
+4. **Tugas.** Kolom cari berupa pill cekung 44 dp dengan placeholder `bodyMedium`, sedangkan teks yang diketik tetap `bodyLarge`. Chip kesulitan dan mata kuliah pindah ke panel **Filter** ([referensi §5](references/README.md)). Kartu tugas mendapat inset bawah 16 dp di bawah baris ikon aksi.
+5. **Highlight biru.** `PrimaryButton` (fill biru, teks putih, raised) menggantikan semua `Button` Material. Tanggal dan Jam Deadline, Impor Paket Tugas, Scan Foto / Screenshot, Cek Update, dan Sinkronkan sekarang ikut naik menjadi aksi utama.
 
 ## Remember Me
 

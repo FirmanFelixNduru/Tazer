@@ -15,22 +15,16 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -63,7 +57,6 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.tazer.taskorganizer.data.FixedSchedule
 import com.tazer.taskorganizer.data.FixedScheduleKind
 import com.tazer.taskorganizer.data.UserProfile
 import com.tazer.taskorganizer.data.WorkSession
@@ -333,7 +326,7 @@ internal fun SettingsScreen(
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text("Sinkronisasi cloud", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
                         Text(status, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        OutlinedButton(onClick = model::syncNow, enabled = !state.cloudSyncing) { Text("Sinkronkan sekarang") }
+                        PrimaryButton(onClick = model::syncNow, enabled = !state.cloudSyncing) { Text("Sinkronkan sekarang") }
                     }
                 }
             }
@@ -374,7 +367,7 @@ private fun ProfileForm(profile: UserProfile, busy: Boolean, model: TazerViewMod
         OutlinedTextField(zone, { zone = it }, modifier = Modifier.fillMaxWidth(), label = { Text("Zona waktu") },
             singleLine = true, enabled = !busy, isError = zoneId == null)
         if (!validRange) Text("Jam selesai harus setelah jam mulai.", color = MaterialTheme.colorScheme.error)
-        Button(
+        PrimaryButton(
             onClick = {
                 model.saveProfile(requireNotNull(zoneId), requireNotNull(parsedStart), requireNotNull(parsedEnd)) {
                     model.showMessage("Jam aktif tersimpan.")

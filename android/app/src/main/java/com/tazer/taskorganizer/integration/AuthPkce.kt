@@ -1,5 +1,6 @@
 package com.tazer.taskorganizer.integration
 
+import com.tazer.taskorganizer.BuildConfig
 import android.net.Uri
 import android.util.AtomicFile
 import java.io.File
@@ -13,12 +14,12 @@ internal enum class AuthFlow(val lifetimeSeconds: Long) {
     GOOGLE(900), SIGN_UP(86_400), RECOVERY(86_400),
 }
 
-internal const val AUTH_REDIRECT = "tazer://auth/callback"
+internal const val AUTH_REDIRECT = BuildConfig.LINK_SCHEME + "://auth/callback"
 private val random = SecureRandom()
 private val base64Url = Base64.getUrlEncoder().withoutPadding()
 
 internal fun isAuthCallback(uri: Uri?): Boolean =
-    uri?.scheme == "tazer" && uri.encodedAuthority == "auth" && uri.encodedPath == "/callback"
+    uri?.scheme == BuildConfig.LINK_SCHEME && uri.encodedAuthority == "auth" && uri.encodedPath == "/callback"
 
 internal class PendingAuth(
     val flow: AuthFlow,

@@ -1,5 +1,6 @@
 package com.tazer.taskorganizer.ui
 
+import androidx.compose.material3.LocalContentColor
 import android.Manifest
 import android.content.ActivityNotFoundException
 import android.content.Context
@@ -19,7 +20,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -103,13 +103,13 @@ internal fun ScanImageButton(
 
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Box {
-            FilledTonalButton(
+            PrimaryButton(
                 onClick = { if (available) choosing = true else onMessage(IntegrationError.SCAN_REQUIRES_AI.message) },
                 enabled = enabled && !scanning,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
             ) {
                 if (scanning) {
-                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    CircularProgressIndicator(Modifier.size(18.dp), color = LocalContentColor.current, strokeWidth = 2.dp)
                     Text("Membaca gambar…", Modifier.padding(start = 12.dp))
                 } else {
                     TazerIcon(TazerGlyph.Camera)

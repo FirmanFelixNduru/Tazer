@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.selection.toggleable
-import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -162,7 +161,7 @@ private fun SubtaskTitleEditor(
         enabled = enabled,
     )
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Button(onClick = { save(trimmed) }, enabled = enabled && trimmed.isNotEmpty() && !tooLong) {
+        PrimaryButton(onClick = { save(trimmed) }, enabled = enabled && trimmed.isNotEmpty() && !tooLong) {
             Text("Simpan subtask")
         }
         OutlinedButton(onClick = cancel) { Text("Batal") }
