@@ -39,6 +39,12 @@ Tempel awalan itu sebelum instruksi peran. Lead memakai model yang ditetapkan pa
 2. Lead dispatch `gpt-6.2-astra` dengan `high` dan ruang lingkup terbatas. Sertakan invariant, fixture, perilaku aktual/ekspektasi, hasil query graph, serta percobaan yang relevan. Naikkan ke `xhigh` hanya jika `high` masih buntu dan bukti menyebut penyebab kebuntuan.
 3. Pemilik modul menerapkan perbaikan yang diterima dan menjalankan ulang tes. Lead mencatat penyebab, model/effort, hasil, dan keputusan gate.
 
+## Gate rilis 1.3.0
+
+1. Verifikasi migrasi SQL dengan dua akun PostgreSQL lokal, RPC staging dan percobaan akses anon. Terapkan migrasi `20261126000000_cloud_sync.sql` sebelum smoke APK.
+2. Deploy Worker dengan `npx wrangler deploy --keep-vars`. Uji readiness, penolakan 401, respons analyzer lama, dan respons dengan header saran checklist.
+3. Uji Room v3 ke v4, antrean offline, replay konflik, checklist, kalibrasi, dan widget dari layar utama. Build APK signed versi 1.3.0 kode 9 dan uji upgrade dari APK 1.2.2 dengan akun, tugas, acara, dan pengaturan yang sudah tersimpan.
+
 ## Template handoff
 
 1. **Wave [N] — Langkah [X] dari [Y] (~[Z] menit).** [Aksi atau hasil inti, model dan effort aktual.]

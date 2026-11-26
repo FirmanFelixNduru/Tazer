@@ -35,7 +35,7 @@ Tazer/
 ```
 
 1. Arah dependensi Android `ui → data/domain`, `timer → data/domain`, `data → domain`. Domain murni Kotlin dan menerima waktu sebagai parameter. Repository menjadi jalur bersama UI, service, dan receiver untuk mutasi Room.
-2. Pakai Node.js + TypeScript dan Supabase Free (Auth + PostgreSQL). Simpan tier dan kuota pada database cloud. Task, laporan timer, dan jadwal tetap tinggal di Room. Namespace dan package ID Android adalah `com.tazer.taskorganizer`. Target awal APK Debug untuk HP fisik dan target akhir signed APK sideload/GitHub Releases gratis.
+2. Pakai Node.js + TypeScript dan Supabase Free (Auth + PostgreSQL). Simpan tier dan kuota pada database cloud. Room melayani UI dan mutasi offline, lalu mereplikasi data akun sesuai kontrak sinkronisasi. Namespace dan package ID Android adalah `com.tazer.taskorganizer`. Distribusikan signed APK lewat sideload/GitHub Releases gratis.
 3. Terapkan `ponytail`. Gunakan helper yang ada, lalu API platform atau pustaka yang sudah dipakai. Tambah dependensi atau abstraksi saat ada kebutuhan konkret. Jaga validasi batas kepercayaan, aksesibilitas, migrasi, dan penanganan kegagalan.
 
 ## Workflow `graphify`

@@ -7,16 +7,23 @@ import androidx.lifecycle.viewModelScope
 import com.tazer.taskorganizer.data.AnalysisSource
 import com.tazer.taskorganizer.data.CalendarEvent
 import com.tazer.taskorganizer.data.CalendarRepository
+import com.tazer.taskorganizer.data.CloudSync
 import com.tazer.taskorganizer.data.FixedSchedule
 import com.tazer.taskorganizer.data.FixedScheduleKind
 import com.tazer.taskorganizer.data.FocusChange
+import com.tazer.taskorganizer.data.Subtask
+import com.tazer.taskorganizer.data.SubtaskDraft
+import com.tazer.taskorganizer.data.SubtaskRepository
 import com.tazer.taskorganizer.data.Task
 import com.tazer.taskorganizer.data.TaskRepository
+import com.tazer.taskorganizer.data.TaskStatus
 import com.tazer.taskorganizer.data.UserProfile
 import com.tazer.taskorganizer.data.WorkSession
 import com.tazer.taskorganizer.data.WorkSessionState
 import com.tazer.taskorganizer.domain.DeadlineRisk
 import com.tazer.taskorganizer.domain.OfflineAnalyzer
+import com.tazer.taskorganizer.domain.PaceCalibration
+import com.tazer.taskorganizer.domain.PaceSample
 import com.tazer.taskorganizer.integration.Account
 import com.tazer.taskorganizer.integration.AndroidIntegration
 import com.tazer.taskorganizer.integration.AuthCallback
@@ -32,13 +39,16 @@ import com.tazer.taskorganizer.timer.FocusRuntime
 import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
+import kotlin.math.roundToInt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -48,6 +58,7 @@ data class Workspace(
     val fixed: List<FixedSchedule>,
     val sessions: List<WorkSession>,
     val events: List<CalendarEvent>,
+    val subtasks: List<Subtask> = emptyList(),
 )
 
 data class TazerState(
@@ -61,6 +72,8 @@ data class TazerState(
     val recovery: Boolean = false,
     val busy: Boolean = false,
     val message: String? = null,
+    val cloudStatus: String? = null,
+    val cloudSyncing: Boolean = false,
 )
 
 data class FocusTarget(val id: String, val requestExtension: Boolean = false)
@@ -73,25 +86,42 @@ data class TaskInput(
     val difficulty: Int,
     val minutes: Int,
     val source: AnalysisSource,
+    val analyzerBaselineMinutes: Int? = null,
+    val checklist: ChecklistChange? = null,
 )
 
-data class AnalysisSuggestion(val difficulty: Int, val minutes: Int, val source: AnalysisSource)
+data class ChecklistChange(val original: List<SubtaskDraft>, val items: List<SubtaskDraft>)
+
+data class AnalysisSuggestion(
+    val difficulty: Int,
+    val minutes: Int,
+    val source: AnalysisSource,
+    val analyzerBaselineMinutes: Int = minutes,
+    val calibrationPercent: Int? = null,
+    val subtasks: List<String> = emptyList(),
+)
 
 enum class AnalyzerMode { OFFLINE, CLOUD, BYOK }
 
-class TazerViewModel(
+class TazerViewModel internal constructor(
     private val repository: TaskRepository,
     private val calendar: CalendarRepository,
     private val integration: AndroidIntegration,
     val focus: FocusRuntime,
     val demoAvailable: Boolean,
+    private val subtaskRepository: SubtaskRepository? = null,
+    private val cloud: CloudSync? = null,
+    private val network: Flow<Boolean> = flowOf(true),
 ) : ViewModel() {
     private val _state = MutableStateFlow(TazerState())
     val state = _state.asStateFlow()
     val authAvailable get() = integration.enabled
     val mockAvailable get() = integration.mockEnabled
+    val subtasksAvailable get() = subtaskRepository != null
 
     private var ownerJob: Job? = null
+    private var syncJob: Job? = null
+    private var online = false
     private var restored = false
     private var pendingFocusLink: FocusLink? = null
 
@@ -138,7 +168,11 @@ class TazerViewModel(
         if (restored) return
         restored = true
         runAction {
-            val account = integration.restoreAccount() ?: return@runAction
+            val account = integration.restoreAccount()
+            if (account == null) {
+                if (_state.value.uid == null) focus.widgetOwnerUid()?.let { focus.deactivate(it) }
+                return@runAction
+            }
             enter(account)
             viewModelScope.launch {
                 try {
@@ -156,6 +190,7 @@ class TazerViewModel(
 
     fun signOut() = runAction {
         ownerJob?.cancel()
+        syncJob?.cancel()
         try {
             _state.value.uid?.let { focus.deactivate(it) }
         } finally {
@@ -262,6 +297,37 @@ class TazerViewModel(
 
     fun refreshTier() = runAction { refreshSubscription() }
 
+    fun syncNow() {
+        val uid = _state.value.uid?.takeIf(CloudSync::uuid) ?: return
+        val engine = cloud ?: return
+        if (syncJob?.isActive == true) return
+        if (!online) {
+            _state.update { it.copy(cloudStatus = "Offline. Perubahan tersimpan di perangkat.") }
+            return
+        }
+        syncJob = viewModelScope.launch {
+            _state.update { if (it.uid == uid) it.copy(cloudSyncing = true, cloudStatus = "Menyinkronkan…") else it }
+            try {
+                val result = engine.sync(uid)
+                if (_state.value.uid != uid) return@launch
+                if (result.replan) rebuild(uid) else if (result.changed) focus.sync(uid)
+                val text = if (result.postponed) "Sinkronisasi dilanjutkan setelah sesi fokus selesai."
+                    else "Sinkron dengan cloud."
+                _state.update { if (it.uid == uid && online) it.copy(cloudStatus = text) else it }
+            } catch (failure: CancellationException) {
+                throw failure
+            } catch (failure: IntegrationException) {
+                if (_state.value.uid != uid) return@launch
+                if (failure.rejectsSession()) reportIntegrationFailure(failure)
+                else _state.update { it.copy(cloudStatus = "Sinkronisasi tertunda. Perubahan tetap tersimpan.") }
+            } catch (_: Exception) {
+                _state.update { if (it.uid == uid) it.copy(cloudStatus = "Sinkronisasi tertunda. Perubahan tetap tersimpan.") else it }
+            } finally {
+                _state.update { if (it.uid == uid) it.copy(cloudSyncing = false) else it }
+            }
+        }
+    }
+
     private suspend fun refreshSubscription() {
         val uid = _state.value.uid ?: return
         if (_state.value.demo) return
@@ -270,18 +336,57 @@ class TazerViewModel(
     }
 
     fun saveTask(task: Task?, input: TaskInput, onSaved: () -> Unit) = change(onSaved) { uid ->
+        val checklist = input.checklist
+        if (checklist == null) return@change persistTask(uid, task, input) != null
+
+        val subtasks = requireNotNull(subtaskRepository)
+        subtasks.withTransaction {
+            if (task != null) {
+                val current = subtasks.observe(uid).first().filter { it.taskId == task.id }
+                    .sortedBy(Subtask::position).map(Subtask::asDraft)
+                if (current != checklist.original) return@withTransaction false
+            }
+            val taskId = persistTask(uid, task, input) ?: return@withTransaction false
+            subtasks.replace(uid, taskId, checklist.items)
+            true
+        }
+    }
+
+    private suspend fun persistTask(uid: String, task: Task?, input: TaskInput): String? {
         if (task == null) {
-            repository.createTask(
+            return repository.createTask(
                 uid, input.title, input.course, input.description, input.deadlineAt, input.difficulty,
                 input.minutes, System.currentTimeMillis(), input.source,
-            )
-            true
-        } else {
-            repository.updateTask(
-                uid, task.id, input.title, input.course, input.description, input.deadlineAt,
-                input.difficulty, input.minutes, input.source,
-            )
+                analyzerBaselineMinutes = input.analyzerBaselineMinutes,
+            ).id
         }
+        val updated = repository.updateTask(
+            uid, task.id, input.title, input.course, input.description, input.deadlineAt,
+            input.difficulty, input.minutes, input.source,
+        )
+        return task.id.takeIf { updated }
+    }
+
+    fun setSubtaskCompleted(taskId: String, id: String, completed: Boolean) = editSubtasks { repo, uid ->
+        repo.setCompleted(uid, taskId, id, completed)
+    }
+
+    fun saveSubtask(taskId: String, id: String?, title: String, onSaved: () -> Unit) = editSubtasks(onSaved) { repo, uid ->
+        repo.save(uid, taskId, id, title)
+    }
+
+    fun deleteSubtask(taskId: String, id: String) = editSubtasks { repo, uid ->
+        repo.delete(uid, taskId, id)
+    }
+
+    private fun editSubtasks(
+        onSaved: () -> Unit = {},
+        operation: suspend (SubtaskRepository, String) -> Boolean,
+    ) = runAction {
+        val uid = _state.value.uid ?: return@runAction
+        val subtasks = subtaskRepository ?: return@runAction
+        if (operation(subtasks, uid)) onSaved()
+        else showMessage("Subtask tidak dapat disimpan. Periksa daftar terbaru.")
     }
 
     fun finishTask(task: Task) = change { uid ->
@@ -341,9 +446,16 @@ class TazerViewModel(
     suspend fun analyze(
         mode: AnalyzerMode, title: String, course: String, description: String, deadlineAt: Long,
     ): AnalysisSuggestion {
+        val factor = _state.value.data?.let { PaceCalibration.factor(course, it.paceSamples()) }
+        fun suggestion(difficulty: Int, minutes: Int, source: AnalysisSource, subtasks: List<String>) =
+            AnalysisSuggestion(
+                difficulty, PaceCalibration.adjustedMinutes(minutes, factor), source, minutes,
+                factor?.let { (it * 100).roundToInt() }, subtasks,
+            )
+
         if (mode == AnalyzerMode.OFFLINE) {
             val result = OfflineAnalyzer.analyze(title, description, deadlineAt, System.currentTimeMillis())
-            return AnalysisSuggestion(result.difficultyScore, result.estimatedMinutes, AnalysisSource.OFFLINE)
+            return suggestion(result.difficultyScore, result.estimatedMinutes, AnalysisSource.OFFLINE, result.subtasks)
         }
         val input = TaskAnalysisInput(title, course, description, Instant.ofEpochMilli(deadlineAt))
         val result = if (mode == AnalyzerMode.CLOUD) integration.analyzeCloud(input) else integration.analyzeByok(input)
@@ -356,7 +468,7 @@ class TazerViewModel(
                 // Keep the valid result when refreshing the displayed quota is unavailable.
             }
         }
-        return AnalysisSuggestion(result.difficultyScore, result.estimatedMinutes, AnalysisSource.AI)
+        return suggestion(result.difficultyScore, result.estimatedMinutes, AnalysisSource.AI, result.subtasks)
     }
 
     private fun change(onSaved: () -> Unit = {}, operation: suspend (String) -> Boolean) = runAction {
@@ -373,19 +485,28 @@ class TazerViewModel(
 
     private suspend fun enter(uid: String, subscription: Subscription?, demo: Boolean) {
         ownerJob?.cancel()
+        syncJob?.cancel()
+        online = false
         if (repository.observeProfile(uid).first() == null) {
             val zone = ZoneId.systemDefault().id.takeIf { it in ZoneId.getAvailableZoneIds() } ?: "Asia/Jakarta"
-            repository.saveProfile(uid, zone, 480, 1320)
+            repository.createDefaultProfile(uid, zone)
             if (demo) ensureDemoTasks(uid)
         }
-        _state.update { it.copy(uid = uid, demo = demo, subscription = subscription, data = null, risks = emptyList(), recovery = false) }
+        val cloudEnabled = cloud != null && CloudSync.uuid(uid)
+        _state.update { it.copy(uid = uid, demo = demo, subscription = subscription, data = null, risks = emptyList(),
+            recovery = false, cloudSyncing = false, cloudStatus = if (cloudEnabled) "Menunggu koneksi." else null) }
+        focus.activate(uid)
+        rebuild(uid)
         ownerJob = viewModelScope.launch {
             launch {
                 combine(
-                    repository.observeProfile(uid), repository.observeTasks(uid),
+                    combine(repository.observeProfile(uid), subtaskRepository?.observe(uid) ?: flowOf(emptyList())) { profile, subtasks ->
+                        profile to subtasks
+                    },
+                    repository.observeTasks(uid),
                     repository.observeFixedSchedules(uid), repository.observeWorkSessions(uid), calendar.observeEvents(uid),
-                ) { profile, tasks, fixed, sessions, events ->
-                    profile?.let { Workspace(it, tasks, fixed, sessions, events) }
+                ) { (profile, subtasks), tasks, fixed, sessions, events ->
+                    profile?.let { Workspace(it, tasks, fixed, sessions, events, subtasks) }
                 }.collect { snapshot ->
                     _state.update { if (it.uid == uid) it.copy(data = snapshot) else it }
                 }
@@ -401,9 +522,30 @@ class TazerViewModel(
                     if (localDate(current.now, zone) != localDate(refreshed, zone)) rebuild(uid)
                 }
             }
+            if (cloudEnabled) {
+                launch {
+                    network.collect { connected ->
+                        online = connected
+                        if (connected) syncNow()
+                        else _state.update { if (it.uid == uid) it.copy(cloudStatus = "Offline. Perubahan tersimpan di perangkat.") else it }
+                    }
+                }
+                launch {
+                    cloud.queuedChanges(uid).collect { dirty ->
+                        if (dirty) {
+                            delay(1_500)
+                            if (_state.value.uid == uid && online) syncNow()
+                        }
+                    }
+                }
+                launch {
+                    while (true) {
+                        delay(5 * 60_000L)
+                        if (_state.value.uid == uid && online) syncNow()
+                    }
+                }
+            }
         }
-        focus.activate(uid)
-        rebuild(uid)
         consumeFocusLink(uid)
     }
 
@@ -456,6 +598,18 @@ class TazerViewModel(
 
     private companion object {
         const val DEMO_UID = "tazer-demo-local"
+    }
+}
+
+internal fun Subtask.asDraft() = SubtaskDraft(id, title, completed)
+
+private fun Workspace.paceSamples(): List<PaceSample> {
+    val actualByTask = sessions.filter { it.state == WorkSessionState.DONE && it.startedAt != null }
+        .groupingBy(WorkSession::taskId)
+        .fold(0L) { total, session -> total + (session.actualWorkMs ?: 0L).coerceAtLeast(0L) }
+    return tasks.filter { it.status == TaskStatus.DONE }.mapNotNull { task ->
+        val actual = actualByTask[task.id] ?: return@mapNotNull null
+        PaceSample(task.course, task.analyzerBaselineMinutes ?: task.initialEstimatedMinutes, actual)
     }
 }
 

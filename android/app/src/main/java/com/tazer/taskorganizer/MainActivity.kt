@@ -14,17 +14,22 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.tazer.taskorganizer.data.CalendarRepository
+import com.tazer.taskorganizer.data.CloudSync
+import com.tazer.taskorganizer.data.SubtaskRepository
 import com.tazer.taskorganizer.data.TaskRepository
 import com.tazer.taskorganizer.data.TazerDatabase
 import com.tazer.taskorganizer.integration.AndroidIntegration
+import com.tazer.taskorganizer.integration.networkAvailability
 import com.tazer.taskorganizer.timer.FocusRuntime
 import com.tazer.taskorganizer.ui.TazerApp
 import com.tazer.taskorganizer.ui.TazerViewModel
+import com.tazer.taskorganizer.widget.FocusWidget
 
 class MainActivity : ComponentActivity() {
     private lateinit var model: TazerViewModel
     private val focus by lazy { FocusRuntime.get(applicationContext) }
     private var permissionRefresh by mutableIntStateOf(0)
+    private var scheduleRequest by mutableIntStateOf(0)
     private val notifyPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
         permissionRefresh++
         if (::model.isInitialized) model.refreshFocus()
@@ -33,18 +38,29 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        scheduleRequest = savedInstanceState?.getInt(SCHEDULE_REQUEST) ?: 0
 
         val factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
                 val database = TazerDatabase.getInstance(applicationContext)
+                val integration = AndroidIntegration(applicationContext)
                 return TazerViewModel(TaskRepository(database), CalendarRepository(database),
-                    AndroidIntegration(applicationContext), focus, BuildConfig.DEBUG) as T
+                    integration, focus, BuildConfig.DEBUG, SubtaskRepository(database),
+                    CloudSync(database, integration::syncRpc), networkAvailability(applicationContext)) as T
             }
         }
         model = ViewModelProvider(this, factory)[TazerViewModel::class.java]
         routeIntent(intent)
-        setContent { TazerApp(model, ::startActivity, ::requestNotifications, permissionRefresh) }
+        setContent {
+            TazerApp(model, ::startActivity, ::requestNotifications, permissionRefresh,
+                scheduleRequest = scheduleRequest, onScheduleOpened = { scheduleRequest = 0 })
+        }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putInt(SCHEDULE_REQUEST, scheduleRequest)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -64,9 +80,20 @@ class MainActivity : ComponentActivity() {
         val uri = intent.data
         when {
             link != null -> {
+                val fromWidget = intent.getBooleanExtra(FocusWidget.EXTRA_WIDGET_LINK, false)
                 intent.replaceExtras(Bundle())
                 intent.data = null
-                model.handleFocusLink(link)
+                if (fromWidget) openSchedule()
+                if (!fromWidget || FocusWidget.isSelectedOwner(applicationContext, link.uid)) {
+                    model.handleFocusLink(link)
+                } else {
+                    model.restoreSession()
+                }
+            }
+            intent.action == FocusWidget.ACTION_OPEN_SCHEDULE -> {
+                intent.action = null
+                openSchedule()
+                model.restoreSession()
             }
             uri?.scheme == "tazer" -> {
                 intent.data = null
@@ -74,6 +101,11 @@ class MainActivity : ComponentActivity() {
             }
             else -> model.restoreSession()
         }
+    }
+
+    private fun openSchedule() {
+        model.closeFocus()
+        scheduleRequest = 1
     }
 
     private fun requestNotifications() {
@@ -85,5 +117,9 @@ class MainActivity : ComponentActivity() {
             startActivity(Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
                 .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, packageName))
         }
+    }
+
+    private companion object {
+        const val SCHEDULE_REQUEST = "widget_schedule_request"
     }
 }

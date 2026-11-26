@@ -22,6 +22,18 @@ class TaskRepository(private val database: TazerDatabase) {
 
     fun observeProfile(uid: String): Flow<UserProfile?> = dao.observeProfile(requireUid(uid))
 
+    internal suspend fun createDefaultProfile(uid: String, zoneId: String) = database.withTransaction {
+        if (dao.findProfile(uid) != null) return@withTransaction
+        // A synthetic default must not win over the profile already stored in the cloud.
+        val db = database.openHelper.writableDatabase
+        db.execSQL("UPDATE SyncDevice SET applying=1 WHERE id=0")
+        try {
+            saveProfile(uid, zoneId, 480, 1320)
+        } finally {
+            db.execSQL("UPDATE SyncDevice SET applying=0 WHERE id=0")
+        }
+    }
+
     suspend fun saveProfile(
         uid: String,
         zoneId: String,
@@ -47,12 +59,14 @@ class TaskRepository(private val database: TazerDatabase) {
         estimatedMinutes: Int,
         createdAt: Long,
         analysisSource: AnalysisSource = AnalysisSource.OFFLINE,
+        analyzerBaselineMinutes: Int? = null,
     ): Task {
         requireUid(uid)
         val trimmedTitle = title.trim()
         val trimmedCourse = course.trim()
         val trimmedDescription = description.trim()
         requireTaskFields(trimmedTitle, trimmedCourse, trimmedDescription, difficultyScore, estimatedMinutes)
+        require(analyzerBaselineMinutes == null || analyzerBaselineMinutes in 1..10080)
         val task = Task(
             id = newId(),
             ownerUid = uid,
@@ -67,6 +81,7 @@ class TaskRepository(private val database: TazerDatabase) {
             status = TaskStatus.PENDING,
             createdAt = createdAt,
             completedAt = null,
+            analyzerBaselineMinutes = analyzerBaselineMinutes,
         )
         dao.insertTask(task)
         return task

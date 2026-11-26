@@ -37,7 +37,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import com.tazer.taskorganizer.data.Subtask
 import com.tazer.taskorganizer.data.Task
+import com.tazer.taskorganizer.data.TaskStatus
 import com.tazer.taskorganizer.data.WorkSession
 import com.tazer.taskorganizer.data.WorkSessionState
 import com.tazer.taskorganizer.domain.FocusMoment
@@ -95,6 +97,11 @@ internal fun FocusScreen(
     val active = session.state in ActiveFocusStates
     val overtime = session.isOvertime(clock)
     val canStart = session.state == WorkSessionState.PENDING && clock.wallMs in session.plannedStartAt..<session.plannedEndAt
+    val subtasks = state.data?.subtasks
+    val checklist = remember(task.id, subtasks) {
+        subtasks.orEmpty().filter { it.taskId == task.id }.sortedBy(Subtask::position).map(Subtask::checklistItem)
+    }
+    var subtaskEditKey by rememberSaveable(task.id) { mutableStateOf<String?>(null) }
     var decision by rememberSaveable(session.id, session.revision, target.requestExtension) {
         mutableStateOf(
             when {
@@ -110,7 +117,7 @@ internal fun FocusScreen(
         }
     }
     Column(
-        Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 24.dp),
+        Modifier.fillMaxWidth().imePadding().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(task.title, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
@@ -170,6 +177,20 @@ internal fun FocusScreen(
             }
         }
         HorizontalDivider(Modifier.padding(vertical = 4.dp))
+        if (model.subtasksAvailable && task.status != TaskStatus.DONE) {
+            key(task.id) {
+                SubtaskEditor(
+                    items = checklist,
+                    enabled = !state.busy,
+                    activeKey = subtaskEditKey?.takeIf { id -> id.isEmpty() || checklist.any { it.key == id } },
+                    onEditKey = { subtaskEditKey = it },
+                    onChecked = { item, completed -> model.setSubtaskCompleted(task.id, item.key, completed) },
+                    onSave = { item, title, onSaved -> model.saveSubtask(task.id, item?.key, title, onSaved) },
+                    onDelete = { item -> model.deleteSubtask(task.id, item.key) },
+                )
+            }
+            HorizontalDivider(Modifier.padding(vertical = 4.dp))
+        }
         OutlinedButton(onClick = defer, enabled = !state.busy) { Text("Saya lagi sibuk") }
         OutlinedButton(onClick = permissions) { Text("Izin pengingat") }
     }

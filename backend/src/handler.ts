@@ -24,7 +24,7 @@ interface Readiness {
 export interface Dependencies {
   verify(token: string): Promise<Session>;
   entitlement(uid: string, consume: boolean): Promise<Subscription & { granted: boolean }>;
-  analyze(input: TaskInput): Promise<unknown>;
+  analyze(input: TaskInput, includeSubtasks: boolean): Promise<unknown>;
   now?: () => Date;
   readiness?: () => Readiness;
 }
@@ -129,8 +129,14 @@ export function createHandler(deps: Dependencies) {
     }
 
     try {
-      const result = analysisOutput(await deps.analyze(input));
-      if (result) return json(result);
+      const includeSubtasks = request.headers.get("X-Tazer-Analysis-Subtasks") === "1";
+      const result = analysisOutput(await deps.analyze(input, includeSubtasks));
+      if (result) {
+        // Older Android builds require exactly two response fields.
+        if (includeSubtasks) return json(result);
+        const { difficultyScore, estimatedMinutes } = result;
+        return json({ difficultyScore, estimatedMinutes });
+      }
     } catch {
       // The provider failure is reported without upstream data or credentials.
     }

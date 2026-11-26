@@ -26,7 +26,11 @@ data class TaskAnalysisInput(
     val deadlineAt: Instant,
 )
 
-data class TaskAnalysisResult(val difficultyScore: Int, val estimatedMinutes: Int)
+data class TaskAnalysisResult(
+    val difficultyScore: Int,
+    val estimatedMinutes: Int,
+    val subtasks: List<String> = emptyList(),
+)
 
 enum class ByokProvider { GEMINI, GROQ }
 
@@ -88,8 +92,26 @@ internal fun JSONObject.subscription(): Subscription {
 }
 
 internal fun JSONObject.analysis(): TaskAnalysisResult {
-    if (length() != 2) fail(IntegrationError.INVALID_RESPONSE)
-    return TaskAnalysisResult(integer("difficultyScore", 1..5), integer("estimatedMinutes", 1..10080))
+    if (keys().asSequence().any { it != "difficultyScore" && it != "estimatedMinutes" && it != "subtasks" }) {
+        fail(IntegrationError.INVALID_RESPONSE)
+    }
+    return TaskAnalysisResult(
+        integer("difficultyScore", 1..5),
+        integer("estimatedMinutes", 1..10080),
+        analysisSubtasks(),
+    )
+}
+
+private fun JSONObject.analysisSubtasks(): List<String> {
+    val array = optJSONArray("subtasks") ?: return emptyList()
+    if (array.length() !in 3..5) return emptyList()
+    return buildList {
+        for (index in 0 until array.length()) {
+            val text = (array.opt(index) as? String)?.trim() ?: return emptyList()
+            if (text.codePointCount(0, text.length) !in 1..120) return emptyList()
+            add(text)
+        }
+    }
 }
 
 private val utcTimestamp = Regex(

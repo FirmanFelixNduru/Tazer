@@ -40,7 +40,15 @@ export function mockDependencies(now = () => new Date()): Dependencies {
       return { tier, monthlyLimit, remaining: monthlyLimit - used, resetsAt, granted };
     },
     async analyze() {
-      return { difficultyScore: 4, estimatedMinutes: 150 };
+      return {
+        difficultyScore: 4,
+        estimatedMinutes: 150,
+        subtasks: [
+          "Catat hasil yang diminta pada instruksi tugas",
+          "Buat draf untuk setiap bagian tugas",
+          "Periksa draf dengan kriteria penilaian",
+        ],
+      };
     },
   };
 }

@@ -61,6 +61,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tazer.taskorganizer.data.WorkSession
 import com.tazer.taskorganizer.data.WorkSessionState
 import com.tazer.taskorganizer.timer.FocusRuntime
+import com.tazer.taskorganizer.widget.FocusWidget
 import java.time.ZoneId
 
 private val DayColors = lightColorScheme(
@@ -111,7 +112,10 @@ private val SectionGlyphs = listOf(TazerGlyph.Tasks, TazerGlyph.Timeline, TazerG
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TazerApp(model: TazerViewModel, launch: (Intent) -> Unit, requestNotifications: () -> Unit, permissionRefresh: Int) {
+fun TazerApp(
+    model: TazerViewModel, launch: (Intent) -> Unit, requestNotifications: () -> Unit, permissionRefresh: Int,
+    scheduleRequest: Int = 0, onScheduleOpened: () -> Unit = {},
+) {
     val state by model.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val themePreference = remember(context) { ThemePreference(context.applicationContext) }
@@ -137,7 +141,11 @@ fun TazerApp(model: TazerViewModel, launch: (Intent) -> Unit, requestNotificatio
                 }
             }
             else -> WorkspaceScreen(state, workspace, model, snackbar, launch, requestNotifications, permissionRefresh,
-                theme) { selected -> themePreference.save(selected); theme = selected }
+                theme, scheduleRequest, onScheduleOpened) { selected ->
+                themePreference.save(selected)
+                theme = selected
+                FocusWidget.refresh(context)
+            }
         }
         }
     }
@@ -148,7 +156,7 @@ fun TazerApp(model: TazerViewModel, launch: (Intent) -> Unit, requestNotificatio
 private fun WorkspaceScreen(
     state: TazerState, workspace: Workspace, model: TazerViewModel, snackbar: SnackbarHostState,
     launch: (Intent) -> Unit, requestNotifications: () -> Unit, permissionRefresh: Int,
-    theme: TazerThemeMode, setTheme: (TazerThemeMode) -> Unit,
+    theme: TazerThemeMode, scheduleRequest: Int, onScheduleOpened: () -> Unit, setTheme: (TazerThemeMode) -> Unit,
 ) {
     var section by rememberSaveable(state.uid) { mutableIntStateOf(0) }
     var taskEditorId by rememberSaveable(state.uid) { mutableStateOf<String?>(null) }
@@ -167,6 +175,16 @@ private fun WorkspaceScreen(
     val editing = taskEditorId != null && !inFocus
     val editedTask = workspace.tasks.firstOrNull { it.id == taskEditorId }
     val closeEditor = { taskEditorId = null }
+    LaunchedEffect(scheduleRequest) {
+        if (scheduleRequest != 0) {
+            section = 1
+            taskEditorId = null
+            viewDay = null
+            deferDialog = false
+            permissionDialog = false
+            onScheduleOpened()
+        }
+    }
     BackHandler(enabled = editing, onBack = closeEditor)
     BackHandler(enabled = inFocus, onBack = model::closeFocus)
     BackHandler(enabled = !inFocus && !editing && section != 0) { section = 0 }

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="focus_widget_surface">@color/focus_widget_surface_dark</color>
+    <color name="focus_widget_primary">@color/focus_widget_primary_dark</color>
+    <color name="focus_widget_secondary">@color/focus_widget_secondary_dark</color>
+</resources>

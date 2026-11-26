@@ -8,15 +8,24 @@ export interface TaskInput {
 export interface Analysis {
   difficultyScore: number;
   estimatedMinutes: number;
+  subtasks?: string[];
 }
+
+const minSubtasks = 3;
+const maxSubtasks = 5;
+const maxSubtaskLength = 120;
 
 export const analysisSchema = {
   type: "object",
   additionalProperties: false,
-  required: ["difficultyScore", "estimatedMinutes"],
+  required: ["difficultyScore", "estimatedMinutes", "subtasks"],
   properties: {
     difficultyScore: { type: "integer", minimum: 1, maximum: 5 },
     estimatedMinutes: { type: "integer", minimum: 1, maximum: 10080 },
+    subtasks: {
+      type: "array", minItems: minSubtasks, maxItems: maxSubtasks,
+      items: { type: "string", description: `A concrete action of at most ${maxSubtaskLength} characters.` },
+    },
   },
 };
 
@@ -54,13 +63,26 @@ export function taskInput(value: unknown): TaskInput | undefined {
 
 export function analysisOutput(value: unknown): Analysis | undefined {
   const fields = object(value);
-  if (!fields || Object.keys(fields).length !== 2) return;
+  if (!fields || Object.keys(fields).some(key => !Object.hasOwn(analysisSchema.properties, key))) return;
   const { difficultyScore, estimatedMinutes } = fields;
   if (
     !integerBetween(difficultyScore, 1, 5) ||
     !integerBetween(estimatedMinutes, 1, 10080)
   ) return;
-  return { difficultyScore, estimatedMinutes };
+  const subtasks = analysisSubtasks(fields.subtasks);
+  return subtasks ? { difficultyScore, estimatedMinutes, subtasks } : { difficultyScore, estimatedMinutes };
+}
+
+function analysisSubtasks(value: unknown): string[] | undefined {
+  if (!Array.isArray(value) || value.length < minSubtasks || value.length > maxSubtasks) return;
+  const subtasks: string[] = [];
+  for (const item of value as unknown[]) {
+    if (typeof item !== "string") return;
+    const text = item.trim();
+    if (!text || [...text].length > maxSubtaskLength) return;
+    subtasks.push(text);
+  }
+  return subtasks;
 }
 
 export function integerBetween(value: unknown, min: number, max: number): value is number {

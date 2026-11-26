@@ -11,11 +11,12 @@ const auth = { id: uid, email: "demo@example.invalid", email_confirmed_at: "2026
 const entitlement = { tier: "PRO", monthly_limit: 20, remaining: 19, resets_at: "2026-12-01T00:00:00Z", granted: true };
 const input = { title: "Sorting", course: "Algorithms", description: "", deadlineAt: "2026-11-03T00:00:00Z" };
 const result = { difficultyScore: 4, estimatedMinutes: 150 };
+const suggested = { ...result, subtasks: ["Pick a sorting algorithm", "Implement it", "Test duplicate values"] };
 const env = {
   SUPABASE_URL: "https://project.example.invalid",
   SUPABASE_PUBLISHABLE_KEY: "sb_publishable_test",
   SUPABASE_SECRET_KEY: "sb_secret_test",
-  GEMINI_MODEL: "gemini-test",
+  GEMINI_MODEL: "gemini-3.5-flash-lite",
   GEMINI_API_KEY: "test-gemini",
   GROQ_MODEL: "test/model",
   GROQ_API_KEY: "test-groq",
@@ -25,7 +26,7 @@ function analyzeRequest() {
   return new Request("https://backend.example.invalid/analyze-task", {
     method: "POST",
     body: JSON.stringify(input),
-    headers: { Authorization: "Bearer auth-token", "Content-Type": "application/json" },
+    headers: { Authorization: "Bearer auth-token", "Content-Type": "application/json", "X-Tazer-Analysis-Subtasks": "1" },
   });
 }
 
@@ -67,16 +68,16 @@ test("Supabase auth then atomic quota, then Gemini and Groq fallback with one ch
     assert.equal(body.response_format.json_schema.strict, true);
     assert.deepEqual(body.response_format.json_schema.schema, analysisSchema);
     assert.deepEqual(JSON.parse(body.messages[1].content), input);
-    return Response.json({ choices: [{ finish_reason: "stop", message: { content: JSON.stringify(result) } }] });
+    return Response.json({ choices: [{ finish_reason: "stop", message: { content: JSON.stringify(suggested), refusal: null } }] });
   };
   const handle = createHandler({ ...supabase(env, fetcher), analyze: providerAnalyzer(env, fetcher) });
   const response = await handle(analyzeRequest());
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), result);
+  assert.deepEqual(await response.json(), suggested);
   assert.deepEqual(hits, [
     "/auth/v1/user",
     "/rest/v1/rpc/tazer_entitlement",
-    "/v1beta/models/gemini-test:generateContent",
+    "/v1beta/models/gemini-3.5-flash-lite:generateContent",
     "/openai/v1/chat/completions",
   ]);
 });
@@ -129,15 +130,53 @@ test("malformed or unavailable quota RPC never invokes providers", async () => {
 
 test("Gemini valid structured output takes precedence and skips thought parts", async () => {
   let calls = 0;
-  const fetcher: typeof fetch = async () => {
+  const prompts: string[] = [];
+  const fetcher: typeof fetch = async (_url, init) => {
     calls++;
+    prompts.push(JSON.parse(String(init?.body)).systemInstruction.parts[0].text);
+    const text = JSON.stringify(suggested);
     return Response.json({ candidates: [{
       finishReason: "STOP",
-      content: { parts: [{ text: "private reasoning", thought: true }, { text: JSON.stringify(result) }] },
+      content: { parts: [{ text: "private reasoning", thought: true }, { text: text.slice(0, 20) }, { text: text.slice(20) }] },
     }] });
   };
-  assert.deepEqual(await providerAnalyzer(env, fetcher)(input), result);
+  assert.deepEqual(await providerAnalyzer(env, fetcher)(input), suggested);
   assert.equal(calls, 1);
+  assert.match(prompts[0]!, /3 to 5 concrete.*120 characters/);
+  assert.ok(analysisSchema.required.includes("subtasks"));
+  assert.equal(analysisSchema.properties.subtasks.minItems, 3);
+  assert.equal(analysisSchema.properties.subtasks.maxItems, 5);
+});
+
+test("blocked or incomplete Gemini responses fall back to a legacy Groq result", async () => {
+  const content = { parts: [{ text: JSON.stringify(suggested) }] };
+  for (const payload of [
+    { promptFeedback: { blockReason: "SAFETY" } },
+    { candidates: [{ finishReason: "MAX_TOKENS", content }] },
+    { candidates: [{ finishReason: "STOP", content: { parts: [{ text: 12 }] } }] },
+  ]) {
+    let calls = 0;
+    const fetcher: typeof fetch = async () => ++calls === 1
+      ? Response.json(payload)
+      : Response.json({ choices: [{ finish_reason: "stop", message: { content: JSON.stringify(result) } }] });
+    assert.deepEqual(await providerAnalyzer(env, fetcher)(input), result);
+    assert.equal(calls, 2);
+  }
+});
+
+test("Gemini keeps valid estimates with legacy or malformed optional suggestions", async () => {
+  const cases = [result, { ...result, subtasks: ["Implement it", "   ", 42] }];
+  for (const output of cases) {
+    let calls = 0;
+    const fetcher: typeof fetch = async () => {
+      calls++;
+      return Response.json({ candidates: [{
+        finishReason: "STOP", content: { parts: [{ text: JSON.stringify(output) }] },
+      }] });
+    };
+    assert.deepEqual(await providerAnalyzer(env, fetcher)(input), result);
+    assert.equal(calls, 1);
+  }
 });
 
 test("Gemini failure can fall back, and Groq refusals and malformed output are rejected", async () => {

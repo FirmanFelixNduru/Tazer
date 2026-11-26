@@ -11,12 +11,16 @@ import org.json.JSONTokener
 
 internal class HttpResponse(val status: Int, private val body: String, val retryAfter: Long?) {
     fun json(): JSONObject = parseJson(body)
+    fun value(): Any = parseJsonValue(body)
 }
 
-internal fun parseJson(text: String): JSONObject {
+internal fun parseJson(text: String): JSONObject =
+    parseJsonValue(text) as? JSONObject ?: fail(IntegrationError.INVALID_RESPONSE)
+
+private fun parseJsonValue(text: String): Any {
     try {
         val parser = JSONTokener(text)
-        val value = parser.nextValue() as? JSONObject ?: fail(IntegrationError.INVALID_RESPONSE)
+        val value = parser.nextValue() ?: fail(IntegrationError.INVALID_RESPONSE)
         if (parser.nextClean() != '\u0000') fail(IntegrationError.INVALID_RESPONSE)
         return value
     } catch (_: JSONException) {
@@ -29,6 +33,7 @@ internal fun call(
     method: String = "GET",
     headers: Map<String, String> = emptyMap(),
     body: JSONObject? = null,
+    maxResponseBytes: Int = 256 * 1024,
 ): HttpResponse {
     val uri = URI(url)
     val connection = (if (uri.scheme == "http") {
@@ -65,7 +70,7 @@ internal fun call(
             while (true) {
                 val count = input.read(buffer)
                 if (count < 0) break
-                if (output.size() + count > 256 * 1024) fail(IntegrationError.INVALID_RESPONSE)
+                if (output.size() + count > maxResponseBytes) fail(IntegrationError.INVALID_RESPONSE)
                 output.write(buffer, 0, count)
             }
             output.toString(Charsets.UTF_8.name())

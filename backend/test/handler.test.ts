@@ -114,6 +114,48 @@ test("analysis validates JSON shape, dimensions and date before charging", async
   assert.deepEqual(received, [{ ...input, title: input.title.trim() }]);
 });
 
+test("local mock sends optional suggestions only to clients that request them", async () => {
+  const handle = createHandler(mockDependencies());
+  const estimates = { difficultyScore: 4, estimatedMinutes: 150 };
+  for (const capability of [undefined, "0", "1"]) {
+    const req = request("/analyze-task", "demo-pro", JSON.stringify(input));
+    if (capability) req.headers.set("X-Tazer-Analysis-Subtasks", capability);
+    const response = await handle(req);
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), capability === "1" ? {
+      ...estimates,
+      subtasks: [
+        "Catat hasil yang diminta pada instruksi tugas",
+        "Buat draf untuk setiap bagian tugas",
+        "Periksa draf dengan kriteria penilaian",
+      ],
+    } : estimates);
+  }
+});
+
+test("opted-in analysis trims valid suggestions and omits an invalid list", async () => {
+  const deps = mockDependencies();
+  const handle = createHandler(deps);
+  const estimates = { difficultyScore: 4, estimatedMinutes: 150 };
+  const exactLength = "Test ".padEnd(119, "a") + "🚀";
+  const valid = ["  Define the inputs  ", "Write a sample", "Run tests", "Check edge cases", exactLength];
+  const legacy = Symbol("missing subtasks");
+  for (const subtasks of [
+    valid, legacy, null, "Run tests", valid.slice(0, 2), [...valid, "Publish the result"],
+    ["Write code", "  \n\t ", "Run tests"], ["Write code", 42, "Run tests"],
+    ["Write code", "Run tests", exactLength + "a"],
+  ]) {
+    deps.analyze = async () => subtasks === legacy ? estimates : { ...estimates, subtasks };
+    const req = request("/analyze-task", "demo-pro", JSON.stringify(input));
+    req.headers.set("X-Tazer-Analysis-Subtasks", "1");
+    const response = await handle(req);
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), subtasks === valid
+      ? { ...estimates, subtasks: valid.map(item => item.trim()) }
+      : estimates);
+  }
+});
+
 test("parallel requests take exactly 20 slots and the UTC rollover resets the quota", async () => {
   let now = "2026-11-30T23:59:59Z";
   const deps = mockDependencies(() => new Date(now));

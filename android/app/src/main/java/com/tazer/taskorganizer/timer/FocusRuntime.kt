@@ -17,6 +17,7 @@ import com.tazer.taskorganizer.data.TazerDatabase
 import com.tazer.taskorganizer.data.WorkSession
 import com.tazer.taskorganizer.data.WorkSessionState
 import com.tazer.taskorganizer.domain.FocusMoment
+import com.tazer.taskorganizer.widget.FocusWidget
 import java.lang.ref.WeakReference
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
@@ -43,9 +44,25 @@ class FocusRuntime private constructor(private val context: Context) {
     private val notifications = FocusNotifications(context, preferences) { linkToken }
     @Volatile private var service = WeakReference<FocusService>(null)
 
+    init {
+        FocusWidget.refresh(context)
+    }
+
     fun now(): FocusMoment = FocusMoment(System.currentTimeMillis(), SystemClock.elapsedRealtime(), bootId)
 
     fun readLink(intent: Intent): FocusLink? = FocusEvent.readLink(context, intent, linkToken)
+
+    internal fun widgetOwnerUid(): String? = owner()
+
+    internal fun widgetFocusIntent(link: FocusLink): Intent {
+        val kind = when (link.kind) {
+            FocusLinkKind.REMINDER -> FocusEventKind.REMINDER
+            FocusLinkKind.ACTIVE -> FocusEventKind.ACTIVE
+            FocusLinkKind.EXTEND -> error("Widget links only open a session")
+        }
+        return FocusEvent(link.uid, link.id, link.revision, kind).activityIntent(context, linkToken)
+    }
+
 
     fun canScheduleExactAlarms(): Boolean = alarms.canScheduleExact()
 
@@ -63,7 +80,12 @@ class FocusRuntime private constructor(private val context: Context) {
         require(uid.isNotBlank())
         if (owner() != uid) {
             owner()?.let { deactivateLocked(it) }
-            saveOwner(uid)
+            FocusWidget.beginOwnerChange(context)
+            try {
+                saveOwner(uid)
+            } finally {
+                FocusWidget.endOwnerChange(context)
+            }
         }
         syncLocked(uid)
         Unit
@@ -176,12 +198,14 @@ class FocusRuntime private constructor(private val context: Context) {
         }
 
     private suspend fun deactivateLocked(uid: String) {
+        FocusWidget.beginOwnerChange(context)
         try {
             repository.interruptRunningFocus(uid, now())
         } finally {
             try {
                 saveOwner(null)
             } finally {
+                FocusWidget.endOwnerChange(context)
                 stopService()
                 notifications.cancelAll()
                 preferences.edit { remove(LAST_REMINDER) }

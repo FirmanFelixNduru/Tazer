@@ -40,7 +40,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tazer.taskorganizer.data.AnalysisSource
+import com.tazer.taskorganizer.data.Subtask
 import com.tazer.taskorganizer.data.Task
 import com.tazer.taskorganizer.data.TaskStatus
 import com.tazer.taskorganizer.data.WorkSessionState
@@ -99,6 +101,7 @@ internal fun TasksScreen(
             .sortedWith(compareByDescending<Task> { it.completedAt }.thenBy { it.id })
     } else ranked
     val taskSessions = remember(workspace.sessions) { workspace.sessions.groupBy { it.taskId } }
+    val taskSubtasks = remember(workspace.subtasks) { workspace.subtasks.groupBy(Subtask::taskId) }
     val risks = remember(state.risks) { state.risks.associateBy { it.taskId } }
     var deleteId by rememberSaveable { mutableStateOf<String?>(null) }
     var reopenId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -125,6 +128,8 @@ internal fun TasksScreen(
             Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(task.title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
                 Text(task.course, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                val subtasks = taskSubtasks[task.id].orEmpty()
+                SubtaskProgress(subtasks.count(Subtask::completed), subtasks.size)
                 if (archived) {
                     val actual = sessions.filter { it.state == WorkSessionState.DONE && it.startedAt != null }
                     val actualMinutes = (actual.sumOf { it.actualWorkMs ?: 0L } + 30_000L) / 60_000L
@@ -168,7 +173,7 @@ internal fun TasksScreen(
     if (taskToDelete != null) AlertDialog(
         onDismissRequest = { deleteId = null },
         title = { Text("Hapus tugas?") },
-        text = { Text("“" + taskToDelete.title + "” beserta riwayat sesinya akan dihapus.") },
+        text = { Text("“" + taskToDelete.title + "” beserta subtask dan riwayat sesinya akan dihapus.") },
         confirmButton = { Button(onClick = { model.deleteTask(taskToDelete); deleteId = null }) { Text("Hapus") } },
         dismissButton = { OutlinedButton(onClick = { deleteId = null }) { Text("Batal") } },
     )
@@ -230,6 +235,16 @@ internal fun TaskEditor(task: Task?, zone: ZoneId, tier: SubscriptionTier?, busy
     var difficulty by rememberSaveable(task?.id) { mutableStateOf(task?.difficultyScore?.toString().orEmpty()) }
     var minutes by rememberSaveable(task?.id) { mutableStateOf(task?.remainingMinutes?.toString().orEmpty()) }
     var source by rememberSaveable(task?.id) { mutableStateOf(task?.analysisSource?.name ?: AnalysisSource.OFFLINE.name) }
+    var baselineMinutes by rememberSaveable(task?.id) { mutableStateOf<Int?>(null) }
+    var calibrationPercent by rememberSaveable(task?.id) { mutableStateOf<Int?>(null) }
+    val editorState by model.state.collectAsStateWithLifecycle()
+    val originalChecklist = rememberSaveable(task?.id, saver = ChecklistSaver) {
+        editorState.data?.subtasks.orEmpty().filter { it.taskId == task?.id }
+            .sortedBy(Subtask::position).map(Subtask::checklistItem)
+    }
+    var checklist by rememberSaveable(task?.id, stateSaver = ChecklistSaver) { mutableStateOf(originalChecklist) }
+    var subtaskEditKey by rememberSaveable(task?.id) { mutableStateOf<String?>(null) }
+    var proposedTitles by rememberSaveable(task?.id) { mutableStateOf(arrayListOf<String>()) }
     var analysisMode by remember(task?.id) { mutableStateOf<AnalyzerMode?>(null) }
     val scope = rememberCoroutineScope()
     val day = LocalDate.parse(date)
@@ -248,6 +263,11 @@ internal fun TaskEditor(task: Task?, zone: ZoneId, tier: SubscriptionTier?, busy
                 difficulty = result.difficulty.toString()
                 minutes = result.minutes.toString()
                 source = result.source.name
+                baselineMinutes = result.analyzerBaselineMinutes
+                calibrationPercent = result.calibrationPercent
+                proposedTitles = ArrayList(result.subtasks.map(String::trim)
+                    .filter { it.length in 1..MaxSubtaskTitleLength }
+                    .distinctBy { it.lowercase(Locale.ROOT) }.take(MaxSubtasks))
             } catch (failure: CancellationException) {
                 throw failure
             } catch (failure: IntegrationException) {
@@ -291,17 +311,63 @@ internal fun TaskEditor(task: Task?, zone: ZoneId, tier: SubscriptionTier?, busy
             difficulty, { difficulty = it }, label = { Text("Kesulitan (1–5)") }, singleLine = true,
             keyboardOptions = NumberKeyboard, enabled = editable, modifier = Modifier.fillMaxWidth(),
         )
+        val percent = calibrationPercent
         OutlinedTextField(
-            minutes, { minutes = it }, label = { Text(if (task == null) "Estimasi (menit)" else "Sisa kerja (menit)") },
+            minutes, {
+                minutes = it
+                calibrationPercent = null
+            }, label = { Text(if (task == null) "Estimasi (menit)" else "Sisa kerja (menit)") },
+            supportingText = if (percent != null) {
+                { Text("Faktor riwayat $percent% · Estimasi dasar $baselineMinutes menit") }
+            } else null,
             singleLine = true, keyboardOptions = NumberKeyboard, enabled = editable, modifier = Modifier.fillMaxWidth(),
         )
+        if (model.subtasksAvailable) {
+            SubtaskEditor(
+                items = checklist,
+                enabled = editable,
+                activeKey = subtaskEditKey,
+                onEditKey = { subtaskEditKey = it },
+                onChecked = { item, completed ->
+                    checklist = checklist.map { if (it == item) it.copy(draft = it.draft.copy(completed = completed)) else it }
+                },
+                onSave = { item, subtaskTitle, onSaved ->
+                    checklist = if (item == null) checklist + ChecklistItem(subtaskTitle)
+                    else checklist.map { if (it == item) it.copy(draft = it.draft.copy(title = subtaskTitle)) else it }
+                    onSaved()
+                },
+                onDelete = { checklist = checklist - it },
+            )
+            val existingTitles = checklist.map { it.draft.title.lowercase(Locale.ROOT) }.toSet()
+            val proposed = proposedTitles.filter { it.lowercase(Locale.ROOT) !in existingTitles }
+                .take((MaxSubtasks - checklist.size).coerceAtLeast(0))
+            if (proposed.isNotEmpty()) {
+                OutlinedButton(
+                    onClick = {
+                        checklist = checklist + proposed.map(::ChecklistItem)
+                        proposedTitles = arrayListOf()
+                    },
+                    enabled = editable && subtaskEditKey == null,
+                ) { Text("Tambahkan saran subtask (${proposed.size})") }
+            }
+        }
         Button(
             onClick = {
                 val score = difficultyValue ?: return@Button
                 val duration = minutesValue ?: return@Button
-                model.saveTask(task, TaskInput(title, course, description, deadline, score, duration, AnalysisSource.valueOf(source)), close)
+                val checklistChange = ChecklistChange(
+                    originalChecklist.map(ChecklistItem::draft), checklist.map(ChecklistItem::draft),
+                ).takeIf { it.original != it.items && model.subtasksAvailable }
+                model.saveTask(
+                    task,
+                    TaskInput(
+                        title, course, description, deadline, score, duration, AnalysisSource.valueOf(source),
+                        baselineMinutes, checklistChange,
+                    ),
+                    close,
+                )
             },
-            enabled = editable && validText && difficultyValue != null && minutesValue != null,
+            enabled = editable && subtaskEditKey == null && validText && difficultyValue != null && minutesValue != null,
             modifier = Modifier.fillMaxWidth(),
         ) { Text("Simpan tugas") }
     }

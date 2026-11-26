@@ -45,6 +45,25 @@ data class Task(
     val status: TaskStatus,
     val createdAt: Long,
     val completedAt: Long?,
+    val analyzerBaselineMinutes: Int? = null,
+)
+
+@Entity(
+    foreignKeys = [ForeignKey(
+        entity = Task::class,
+        parentColumns = ["id", "ownerUid"],
+        childColumns = ["taskId", "ownerUid"],
+        onDelete = ForeignKey.CASCADE,
+    )],
+    indices = [Index(value = ["taskId", "ownerUid"])],
+)
+data class Subtask(
+    @PrimaryKey val id: String,
+    val ownerUid: String,
+    val taskId: String,
+    val title: String,
+    val completed: Boolean,
+    val position: Int,
 )
 
 @Entity(

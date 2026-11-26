@@ -135,6 +135,37 @@ class AndroidIntegration(context: Context) {
         backend(session, "/analyze-task", payload).analysis()
     }
 
+    internal suspend fun syncRpc(uid: String, name: String, body: JSONObject): Any = serialized {
+        require(name == "tazer_sync_push" || name == "tazer_sync_pull")
+        val session = session()
+        if (session.mock || session.verifiedUid().value != uid) fail(IntegrationError.INVALID_AUTH)
+        fun request() = call(
+            "${BuildConfig.SUPABASE_URL}/rest/v1/rpc/$name", "POST",
+            mapOf("apikey" to BuildConfig.SUPABASE_PUBLISHABLE_KEY, "Authorization" to "Bearer ${session.tokens.access}"),
+            body, maxResponseBytes = 2 * 1024 * 1024,
+        )
+        try {
+            var response = request()
+            if (response.status == 401) {
+                refresh(session)
+                response = request()
+            }
+            when (response.status) {
+                200 -> response.value()
+                401 -> fail(IntegrationError.INVALID_AUTH)
+                404 -> fail(IntegrationError.NOT_CONFIGURED)
+                429, in 500..599 -> fail(IntegrationError.VERIFICATION_UNAVAILABLE)
+                else -> fail(IntegrationError.INVALID_RESPONSE)
+            }
+        } catch (failure: IntegrationException) {
+            if (failure.code == IntegrationError.INVALID_AUTH || failure.code == IntegrationError.EMAIL_UNVERIFIED) {
+                active = null
+                clearSavedSession()
+            }
+            throw failure
+        }
+    }
+
     suspend fun analyzeByok(input: TaskAnalysisInput): TaskAnalysisResult = serialized {
         val payload = input.toJson()
         val uid = requireByok()
@@ -245,7 +276,10 @@ class AndroidIntegration(context: Context) {
         fun request() = call(
             origin + path,
             if (payload == null) "GET" else "POST",
-            mapOf("Authorization" to "Bearer ${session.tokens.access}"),
+            buildMap {
+                put("Authorization", "Bearer ${session.tokens.access}")
+                if (path == "/analyze-task") put("X-Tazer-Analysis-Subtasks", "1")
+            },
             payload,
         )
         try {

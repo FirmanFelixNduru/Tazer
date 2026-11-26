@@ -3,6 +3,7 @@ package com.tazer.taskorganizer.ui
 import android.app.Activity
 import android.content.Intent
 import android.graphics.Rect
+import android.os.Build
 import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -204,8 +205,13 @@ class ReleaseUiTest {
             assertTrue(labels.map { bounds(requireNotNull(actionFor(it))) }.all {
                 it.width() >= minimum - 1 && it.height() >= minimum - 1
             })
-            waitFor("Edit icon did not accept a tap") { clickText(labels[0]) }
-            waitFor("Edit task did not open") { findText("Edit tugas") != null }
+            assertTrue("Edit action was rejected",
+                requireNotNull(actionFor(labels[0])).performAction(AccessibilityNodeInfo.ACTION_CLICK))
+            waitFor("Editor did not open for $title") {
+                // UiAutomation can retain the old Compose task list after navigation on API 37.
+                if (Build.VERSION.SDK_INT >= 33) automation.clearCache()
+                findText("Edit tugas") != null && find { it.isEditable && it.text?.toString() == title } != null
+            }
             waitFor("Edit back button did not accept a tap") { clickText("Kembali") }
             waitFor("Complete action not available") { clickText(labels[1]) }
             waitFor("Archive tab did not open") { clickText("Selesai") }
@@ -214,7 +220,9 @@ class ReleaseUiTest {
             }
             waitFor("Archive delete confirmation did not open") { findText("Hapus tugas?") != null }
             waitFor("Archive delete confirmation did not accept a tap") { clickText("Hapus") }
-            waitFor("Task stayed in archive after delete") { actionFor(labels[2]) == null }
+            waitFor("Task stayed in archive after delete") {
+                findText("Belum Selesai") != null && findText(title) == null && actionFor(labels[2]) == null
+            }
         } finally {
             taskId?.let { tasks.deleteTask(UID, it) }
             finish()

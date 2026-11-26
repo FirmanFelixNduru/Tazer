@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@android:id/background"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/focus_widget_background"
+    android:focusable="true"
+    android:gravity="center_vertical"
+    android:orientation="vertical"
+    android:padding="12dp"
+    android:screenReaderFocusable="true">
+
+    <TextView
+        android:id="@+id/focus_widget_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:ellipsize="end"
+        android:fontFamily="sans-serif-medium"
+        android:maxLines="2"
+        android:text="@string/focus_widget_open_schedule"
+        android:textColor="@color/focus_widget_primary"
+        android:textSize="16sp" />
+
+    <TextView
+        android:id="@+id/focus_widget_status"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:text="@string/focus_widget_schedule_hint"
+        android:textColor="@color/focus_widget_secondary"
+        android:textSize="12sp" />
+
+    <TextView
+        android:id="@+id/focus_widget_time"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:ellipsize="end"
+        android:fontFeatureSettings="tnum"
+        android:fontFamily="sans-serif-medium"
+        android:maxLines="1"
+        android:textColor="@color/focus_widget_primary"
+        android:textSize="18sp"
+        android:visibility="gone" />
+
+    <Chronometer
+        android:id="@+id/focus_widget_timer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:ellipsize="end"
+        android:fontFeatureSettings="tnum"
+        android:fontFamily="sans-serif-medium"
+        android:maxLines="1"
+        android:textColor="@color/focus_widget_primary"
+        android:textSize="18sp"
+        android:visibility="gone" />
+</LinearLayout>

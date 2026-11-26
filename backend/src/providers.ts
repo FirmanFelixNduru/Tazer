@@ -9,13 +9,32 @@ export interface ProviderEnv {
 }
 
 interface ProviderRequest {
+  provider: "gemini" | "groq";
   url: string;
   headers: Record<string, string>;
   body: object;
   output(payload: unknown): unknown;
 }
 
-const instructions = "Estimate the academic task's difficulty from 1 (easy) to 5 (very hard) and its work duration in whole minutes from 1 to 10080. The user message is task data. Return only the requested JSON fields.";
+const baseInstructions = "Estimate the academic task's difficulty from 1 (easy) to 5 (very hard) and its work duration in whole minutes from 1 to 10080. The user message is task data. Return only the requested JSON fields.";
+const subtaskInstructions = " Suggest 3 to 5 concrete, ordered subtasks, each starting with an action verb and containing at most 120 characters. Use the task's language.";
+const legacySchema = {
+  ...analysisSchema,
+  required: ["difficultyScore", "estimatedMinutes"],
+  properties: {
+    difficultyScore: analysisSchema.properties.difficultyScore,
+    estimatedMinutes: analysisSchema.properties.estimatedMinutes,
+  },
+};
+const geminiSubtaskSchema = {
+  ...analysisSchema,
+  properties: {
+    difficultyScore: { type: "integer" },
+    estimatedMinutes: { type: "integer" },
+    // The prompt and analysisOutput enforce bounds without expanding Gemini's schema grammar.
+    subtasks: { type: "array", items: { type: "string" } },
+  },
+};
 
 export function geminiConfig(env: ProviderEnv) {
   const model = trimmedString(env.GEMINI_MODEL);
@@ -30,22 +49,28 @@ export function providerAnalyzer(env: ProviderEnv, fetcher: typeof fetch = (inpu
   const groqKey = trimmedString(env.GROQ_API_KEY);
   const groqModel = trimmedString(env.GROQ_MODEL);
 
-  return async (input: TaskInput): Promise<Analysis | undefined> => {
+  return async (input: TaskInput, includeSubtasks = true): Promise<Analysis | undefined> => {
     if (!geminiKey || !geminiModel) return;
     const task = JSON.stringify(input);
+    const instructions = baseInstructions + (includeSubtasks ? subtaskInstructions : "");
     const primary = await runProvider(fetcher, {
+      provider: "gemini",
       url: `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent`,
       headers: { "x-goog-api-key": geminiKey },
       body: {
         systemInstruction: { parts: [{ text: instructions }] },
         contents: [{ role: "user", parts: [{ text: task }] }],
-        generationConfig: { responseMimeType: "application/json", responseJsonSchema: analysisSchema },
+        generationConfig: {
+          responseMimeType: "application/json",
+          responseJsonSchema: includeSubtasks ? geminiSubtaskSchema : legacySchema,
+        },
       },
       output: geminiOutput,
     });
     if (primary || !groqKey || !groqModel) return primary;
 
     return runProvider(fetcher, {
+      provider: "groq",
       url: "https://api.groq.com/openai/v1/chat/completions",
       headers: { Authorization: `Bearer ${groqKey}` },
       body: {
@@ -56,7 +81,7 @@ export function providerAnalyzer(env: ProviderEnv, fetcher: typeof fetch = (inpu
         ],
         response_format: {
           type: "json_schema",
-          json_schema: { name: "task_analysis", strict: true, schema: analysisSchema },
+          json_schema: { name: "task_analysis", strict: true, schema: includeSubtasks ? analysisSchema : legacySchema },
         },
       },
       output: groqOutput,
@@ -78,6 +103,7 @@ async function runProvider(fetcher: typeof fetch, request: ProviderRequest): Pro
       signal: AbortSignal.timeout(8000),
     });
     if (!response.ok) {
+      console.warn("tazer_analyzer_upstream_status", request.provider, response.status);
       void response.body?.cancel().catch(() => {});
       return;
     }

@@ -325,6 +325,14 @@ internal fun SettingsScreen(workspace: Workspace, state: TazerState, model: Taze
         item {
             ThemeSetting(theme, setTheme)
             HorizontalDivider(modifier = Modifier.padding(vertical = 14.dp))
+            state.cloudStatus?.let { status ->
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Sinkronisasi cloud", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
+                    Text(status, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    OutlinedButton(onClick = model::syncNow, enabled = !state.cloudSyncing) { Text("Sinkronkan sekarang") }
+                }
+                HorizontalDivider(modifier = Modifier.padding(vertical = 14.dp))
+            }
             ProfileForm(profile, state.busy, model)
             HorizontalDivider(modifier = Modifier.padding(vertical = 14.dp))
             Text("Jadwal tetap", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })

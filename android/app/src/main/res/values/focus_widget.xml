@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="focus_widget_name">Jadwal Tazer</string>
+    <string name="focus_widget_open_schedule">Buka Jadwal</string>
+    <string name="focus_widget_schedule_hint">Lihat sesi hari ini</string>
+    <string name="focus_widget_no_session">Tidak ada sesi hari ini</string>
+    <string name="focus_widget_next">Sesi berikutnya</string>
+    <string name="focus_widget_running">Sisa waktu fokus</string>
+    <string name="focus_widget_paused">Fokus dijeda</string>
+    <string name="focus_widget_overtime">Waktu tambahan</string>
+    <string name="focus_widget_overtime_format">+%s</string>
+    <dimen name="focus_widget_corner">16dp</dimen>
+    <color name="focus_widget_surface_light">#EBF2ED</color>
+    <color name="focus_widget_primary_light">#17221D</color>
+    <color name="focus_widget_secondary_light">#485A51</color>
+    <color name="focus_widget_surface_dark">#141F19</color>
+    <color name="focus_widget_primary_dark">#DEE9E0</color>
+    <color name="focus_widget_secondary_dark">#B6C9BD</color>
+    <color name="focus_widget_surface">@color/focus_widget_surface_light</color>
+    <color name="focus_widget_primary">@color/focus_widget_primary_light</color>
+    <color name="focus_widget_secondary">@color/focus_widget_secondary_light</color>
+</resources>

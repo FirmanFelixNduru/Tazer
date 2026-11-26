@@ -6,6 +6,12 @@ Draft v1 Wave 0. Field dan enum mengikuti [kontrak data dan API](DATA_AND_API_CO
 
 Lowercase judul dan deskripsi dengan locale tetap. Hitung berapa dari `coding`, `makalah`, `presentasi`, `kelompok` muncul sebagai kata utuh, masing-masing maksimal sekali. Tambahkan 1 jika deskripsi setelah trim memiliki 240 karakter atau lebih, dan 1 jika deadline dalam 48 jam atau terlewat. Gunakan `difficultyScore = clamp(1 + jumlahKataDemikian + bonusPanjang + bonusDeadline, 1, 5)`. Gunakan menit `[25, 50, 90, 150, 240]` untuk masing-masing skor. UI meminta konfirmasi dan mengizinkan edit skor serta menit.
 
+Analyzer offline menyarankan 3–5 langkah berdasarkan jenis tugas. Checklist hanya mengubah progres langkah. Menandai semua langkah tidak otomatis menyelesaikan Task atau Focus Timer.
+
+Estimasi baru dikalibrasi dengan median `jumlah actualWorkMs / (baselineMinutes × 60.000)` dari tugas selesai yang memiliki riwayat sesi aktual. Cari minimal tiga tugas dengan nama mata kuliah yang dinormalisasi. Jika kurang, pakai minimal tiga riwayat global. Jepit faktor ke 0,75–1,80 dan menit ke 1–10080. Simpan baseline mentah pada pembuatan tugas untuk mencegah kalibrasi berulang. Riwayat lama memakai estimasi awal. Form menampilkan penyesuaian dan dapat ditimpa manual.
+
+Widget memilih sesi aktif untuk UID terpilih atau sesi PENDING tersisa pada hari sipil profil. Countdown memakai chronometer platform dan cutoff monotonic; PAUSED memakai durasi beku. Aksi membuka tautan Focus Timer yang tunduk pada token dan revisi sesi, atau Jadwal saat tidak ada sesi. Widget menghapus isi lama saat UID berganti dan mengikuti pilihan tema yang berlaku.
+
 ## Priority Ranking Engine
 
 ```text
