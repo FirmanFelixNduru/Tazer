@@ -1,6 +1,6 @@
 # Tazer
 
-Tazer membantu mahasiswa mencatat tugas, menyusun jadwal belajar, dan melacak sesi fokus. Tugas, jadwal, dan timer dapat dipakai secara offline. Akun Supabase menambahkan sinkronisasi antarperangkat, dan PRO menyediakan hingga 100 analisis AI per bulan melalui server, termasuk scan tugas dari foto atau screenshot. Smart Daily Briefing mengirim ringkasan jadwal setiap pagi dan review setiap malam. Tugas bisa dicari dan difilter per mata kuliah dengan warna yang konsisten, dibagikan ke teman kelompok, diekspor ke `.ics`, dan dicadangkan ke file JSON.
+Tazer membantu mahasiswa mencatat tugas, menyusun jadwal belajar, dan melacak sesi fokus. Tugas, jadwal, dan timer dapat dipakai secara offline. Akun Supabase menambahkan sinkronisasi antarperangkat, dan PRO menyediakan hingga 100 analisis AI per bulan melalui server, termasuk scan tugas dari foto atau screenshot. Smart Daily Briefing mengirim ringkasan jadwal setiap pagi dan review setiap malam. Jadwal tetap bisa diisi manual atau diimpor dari .ics, .csv, .xlsx, maupun foto KRS. Tugas bisa dicari dan difilter per mata kuliah dengan warna yang konsisten, dibagikan ke teman kelompok, diekspor ke `.ics`, dan dicadangkan ke file JSON.
 
 ## Instalasi Android
 

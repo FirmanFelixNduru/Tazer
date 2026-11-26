@@ -1,6 +1,6 @@
 import { analysisOutput, analysisSchema, object } from "./analysis.js";
 import type { Analysis, TaskInput } from "./analysis.js";
-import { imageExtractionSchema, imageInstructions } from "./image.js";
+import { imageExtractionSchema, imageInstructions, scheduleExtractionSchema, scheduleInstructions } from "./image.js";
 import type { ImageInput } from "./image.js";
 
 export interface ProviderEnv {
@@ -92,8 +92,18 @@ export function providerAnalyzer(env: ProviderEnv, fetcher: typeof fetch = (inpu
   };
 }
 
-/** Gemini only: the configured Groq models are text-only. */
 export function providerImageExtractor(env: ProviderEnv, fetcher: typeof fetch = (input, init) => globalThis.fetch(input, init)) {
+  return geminiImage(env, fetcher, imageInstructions, "Ekstrak tugas dari gambar ini.", imageExtractionSchema);
+}
+
+export function providerScheduleExtractor(env: ProviderEnv, fetcher: typeof fetch = (input, init) => globalThis.fetch(input, init)) {
+  return geminiImage(env, fetcher, scheduleInstructions, "Ekstrak jadwal kuliah dari gambar ini.", scheduleExtractionSchema);
+}
+
+/** Gemini only: the configured Groq models are text-only. The image is sent inline and never stored. */
+function geminiImage(
+  env: ProviderEnv, fetcher: typeof fetch, instructions: (input: ImageInput) => string, prompt: string, schema: object,
+) {
   const { key, model } = geminiConfig(env);
   return async (input: ImageInput): Promise<unknown> => {
     if (!key || !model) return;
@@ -102,15 +112,15 @@ export function providerImageExtractor(env: ProviderEnv, fetcher: typeof fetch =
       url: `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
       headers: { "x-goog-api-key": key },
       body: {
-        systemInstruction: { parts: [{ text: imageInstructions(input) }] },
+        systemInstruction: { parts: [{ text: instructions(input) }] },
         contents: [{
           role: "user",
           parts: [
             { inlineData: { mimeType: input.mimeType, data: input.imageBase64 } },
-            { text: "Ekstrak tugas dari gambar ini." },
+            { text: prompt },
           ],
         }],
-        generationConfig: { responseMimeType: "application/json", responseJsonSchema: imageExtractionSchema },
+        generationConfig: { responseMimeType: "application/json", responseJsonSchema: schema },
       },
       output: geminiOutput,
       timeoutMs: 25_000,

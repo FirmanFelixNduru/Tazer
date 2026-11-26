@@ -17,6 +17,7 @@ class IcsWriterTest {
         ExportEvent("e1", "UTS; Basis Data, ruang 3", day("2026-12-01"), day("2026-12-01"), 9 * 60, "Bawa\nkartu ujian\\KTM"),
         ExportEvent("e2", "Libur semester", day("2026-12-20"), day("2026-12-31"), null, ""),
         ExportEvent("e3", "Kemah kampus", day("2026-12-05"), day("2026-12-06"), 18 * 60 + 30, ""),
+        ExportEvent("e4", "Seminar", day("2026-12-08"), day("2026-12-08"), 13 * 60, "", endMinute = 15 * 60 + 30),
     )
     private val blocks = listOf(
         ExportBlock("b1", "Kuliah Algoritma", 1, 8 * 60, 10 * 60),
@@ -33,8 +34,9 @@ class IcsWriterTest {
         assertTrue(ics.endsWith("END:VCALENDAR\r\n"))
         assertFalse("bare LF", Regex("(?<!\r)\n").containsMatchIn(ics))
         ics.split("\r\n").forEach { assertTrue(it, it.toByteArray(Charsets.UTF_8).size <= 75) }
-        assertEquals(6, Regex("BEGIN:VEVENT").findAll(ics).count())
-        assertEquals(6, Regex("\r\nDTSTAMP:20261126T010000Z\r\n").findAll(ics).count())
+        assertEquals(7, Regex("BEGIN:VEVENT").findAll(ics).count())
+        assertEquals(7, Regex("\r\nDTSTAMP:20261126T010000Z\r\n").findAll(ics).count())
+        assertTrue(ics.contains("DTSTART:20261208T130000\r\nDTEND:20261208T153000\r\n"))
         assertTrue(ics.contains("SUMMARY:UTS\\; Basis Data\\, ruang 3\r\n"))
         assertTrue(ics.contains("RRULE:FREQ=WEEKLY;BYDAY=MO\r\n"))
         assertTrue(ics.contains("DTSTART:20261127T060000Z\r\n"))
@@ -67,6 +69,9 @@ class IcsWriterTest {
         val camp = parsedEvents.getValue("event-e3@tazer")
         assertEquals(LocalDate.parse("2026-12-06"), camp.endDate)
         assertEquals(18 * 60 + 30, camp.startMinute)
+        val seminar = parsedEvents.getValue("event-e4@tazer")
+        assertEquals(13 * 60 to 15 * 60 + 30, seminar.startMinute to seminar.endMinute)
+        assertNull(exam.endMinute)
         val session = parsedEvents.getValue("session-s1@tazer")
         assertEquals("Fokus: Laporan ERD", session.title)
         assertEquals(13 * 60, session.startMinute)

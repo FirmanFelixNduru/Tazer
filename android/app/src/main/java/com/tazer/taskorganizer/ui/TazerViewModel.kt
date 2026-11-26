@@ -44,7 +44,9 @@ import com.tazer.taskorganizer.integration.ByokProvider
 import com.tazer.taskorganizer.integration.IntegrationError
 import com.tazer.taskorganizer.integration.ImageExtraction
 import com.tazer.taskorganizer.integration.IntegrationException
+import com.tazer.taskorganizer.integration.ScheduleScan
 import com.tazer.taskorganizer.integration.compressForScan
+import com.tazer.taskorganizer.domain.ScheduleDraft
 import com.tazer.taskorganizer.integration.Subscription
 import com.tazer.taskorganizer.integration.SubscriptionTier
 import com.tazer.taskorganizer.integration.TaskAnalysisInput
@@ -155,10 +157,10 @@ class TazerViewModel internal constructor(
 
     fun saveEvent(
         id: String?, title: String, from: Long, through: Long, minute: Int?, description: String,
-        onSaved: () -> Unit,
+        endMinute: Int? = null, colorIndex: Int? = null, onSaved: () -> Unit,
     ) = runAction {
         val uid = _state.value.uid ?: return@runAction
-        if (calendar.saveEvent(uid, id, title, from, through, minute, description)) onSaved()
+        if (calendar.saveEvent(uid, id, title, from, through, minute, description, endMinute, colorIndex)) onSaved()
         else showMessage("Acara sudah berubah. Buka ulang kalender.")
     }
 
@@ -459,11 +461,13 @@ class TazerViewModel internal constructor(
         true
     }
 
+    /** Saves one edited block, or one new block per repeating day; an end before the start continues past midnight. */
     fun saveFixed(
-        schedule: FixedSchedule?, label: String, kind: FixedScheduleKind, day: Int, start: Int, end: Int,
+        schedule: FixedSchedule?, label: String, kind: FixedScheduleKind, days: List<Int>, start: Int, end: Int,
         onSaved: () -> Unit,
     ) = change(onSaved) { uid ->
-        repository.saveFixedScheduleRange(uid, schedule?.id, label, kind, day, start, end)
+        require(days.isNotEmpty() && (schedule == null || days.size == 1))
+        days.all { day -> repository.saveFixedScheduleRange(uid, schedule?.id, label, kind, day, start, end) }
     }
 
     fun deleteFixed(schedule: FixedSchedule) = change { uid -> repository.deleteFixedSchedule(uid, schedule.id) }
@@ -546,6 +550,34 @@ class TazerViewModel internal constructor(
         )
     }
 
+    /** Reads a timetable photo into weekly rows for the preview sheet. PRO uses one server slot; BYOK calls Gemini. */
+    suspend fun scanSchedule(resolver: ContentResolver, uri: Uri, zone: ZoneId): ScheduleScan {
+        val tier = _state.value.subscription?.tier
+        if (_state.value.demo || (tier != SubscriptionTier.PRO && tier != SubscriptionTier.BYOK)) {
+            throw IntegrationException(IntegrationError.SCAN_REQUIRES_AI)
+        }
+        val jpeg = withContext(Dispatchers.Default) { compressForScan(resolver, uri) }
+        val today = LocalDate.now(zone)
+        return if (tier == SubscriptionTier.PRO) {
+            integration.extractScheduleCloud(jpeg, today, zone).also { refreshQuietly() }
+        } else {
+            integration.extractScheduleByok(jpeg, today, zone)
+        }
+    }
+
+    /**
+     * Saves the ticked preview rows as weekly blocks, plus one-off .ics events when the user kept them, then
+     * replans. Room triggers queue both for Cloud Sync.
+     */
+    internal fun saveScheduleDrafts(drafts: List<ScheduleDraft>, events: IcsImportPreview?, onSaved: () -> Unit) = change({
+        showMessage("${drafts.size} jadwal tetap tersimpan" + (events?.let { " beserta ${it.events.size} acara" } ?: "") + ".")
+        onSaved()
+    }) { uid ->
+        repository.addFixedSchedules(uid, drafts)
+        events?.let { calendar.importIcs(uid, it.copy(weeklyBlocks = emptyList())) }
+        true
+    }
+
     private suspend fun refreshQuietly() {
         try {
             refreshSubscription()
@@ -617,7 +649,9 @@ class TazerViewModel internal constructor(
         val titles = workspace.tasks.associateBy { it.id }
         return IcsWriter.write(
             ZoneId.of(workspace.profile.zoneId), now,
-            workspace.events.map { ExportEvent(it.id, it.title, it.startEpochDay, it.endEpochDay, it.startMinute, it.description) },
+            workspace.events.map {
+                ExportEvent(it.id, it.title, it.startEpochDay, it.endEpochDay, it.startMinute, it.description, it.endMinute)
+            },
             workspace.fixed.map { ExportBlock(it.id, it.label, it.dayOfWeek, it.startMinute, it.endMinute) },
             workspace.sessions.filter { it.state == WorkSessionState.PENDING && it.plannedEndAt > now }.mapNotNull { session ->
                 titles[session.taskId]?.let { ExportSession(session.id, it.title, it.course, session.plannedStartAt, session.plannedEndAt) }

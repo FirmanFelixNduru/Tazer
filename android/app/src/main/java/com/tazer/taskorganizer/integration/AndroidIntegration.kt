@@ -186,6 +186,20 @@ class AndroidIntegration(context: Context) {
         extractWithGemini(payload, credential)
     }
 
+    /** PRO: one timetable photo uses one server analysis slot. */
+    suspend fun extractScheduleCloud(jpeg: ByteArray, today: LocalDate, zone: ZoneId): ScheduleScan = serialized {
+        val payload = scanBody(jpeg, today, zone)
+        val session = session()
+        if (subscription(session).tier != SubscriptionTier.PRO) fail(IntegrationError.PRO_REQUIRED)
+        backend(session, "/extract-schedule-image", payload, SCAN_TIMEOUT_MS).scheduleScan()
+    }
+
+    suspend fun extractScheduleByok(jpeg: ByteArray, today: LocalDate, zone: ZoneId): ScheduleScan = serialized {
+        val payload = scanBody(jpeg, today, zone)
+        val credential = vault.read(requireByok()) ?: fail(IntegrationError.BYOK_KEY_MISSING)
+        extractScheduleWithGemini(payload, credential)
+    }
+
     suspend fun analyzeByok(input: TaskAnalysisInput): TaskAnalysisResult = serialized {
         val payload = input.toJson()
         val uid = requireByok()

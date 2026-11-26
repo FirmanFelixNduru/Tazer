@@ -94,7 +94,7 @@ private data class TimelineRow(
 @Composable
 internal fun TimelineScreen(
     workspace: Workspace, state: TazerState, zone: ZoneId, day: LocalDate, selectDay: (LocalDate) -> Unit,
-    openFocus: (WorkSession) -> Unit, defer: () -> Unit, permissions: () -> Unit,
+    openFocus: (WorkSession) -> Unit, defer: () -> Unit,
     focusPreset: FocusPreset,
 ) {
     val today = localDate(state.now, zone)
@@ -124,10 +124,7 @@ internal fun TimelineScreen(
         DateSpinner(day, today, selectDay, Modifier.padding(horizontal = 20.dp))
         LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 12.dp)) {
             item {
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    OutlinedButton(onClick = defer, enabled = !state.busy) { Text("Saya lagi sibuk") }
-                    OutlinedButton(onClick = permissions) { Text("Pengaturan fokus") }
-                }
+                OutlinedButton(onClick = defer, enabled = !state.busy) { Text("Saya lagi sibuk") }
                 FocusRhythm(focusPreset, Modifier.padding(top = 6.dp))
                 if (state.risks.isNotEmpty()) Text(
                     "Risiko lewat deadline pada ${state.risks.size} tugas. Lihat tab Belum Selesai.",
@@ -324,11 +321,7 @@ internal fun SettingsScreen(
     setTheme: (TazerThemeMode) -> Unit, permissionRefresh: Int, requestNotifications: () -> Unit,
     openFocusSettings: () -> Unit,
 ) {
-    var editId by rememberSaveable { mutableStateOf<String?>(null) }
-    var deleteId by rememberSaveable { mutableStateOf<String?>(null) }
     val profile = workspace.profile
-    val editing = workspace.fixed.firstOrNull { it.id == editId }
-    val deleting = workspace.fixed.firstOrNull { it.id == deleteId }
     LazyColumn(contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp)) {
         item {
             ThemeSetting(theme, setTheme)
@@ -348,27 +341,6 @@ internal fun SettingsScreen(
                 HorizontalDivider(modifier = Modifier.padding(vertical = 14.dp))
             }
             ProfileForm(profile, state.busy, model)
-            HorizontalDivider(modifier = Modifier.padding(vertical = 14.dp))
-            Text("Jadwal tetap", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { editId = "" }, enabled = !state.busy) { Text("Tambah jadwal tetap") }
-                key(profile.ownerUid, profile.zoneId) {
-                    ImportIcsButton(profile.ownerUid, state.busy, model)
-                }
-            }
-        }
-        items(workspace.fixed.sortedWith(compareBy<FixedSchedule> { it.dayOfWeek }.thenBy { it.startMinute }), key = { it.id }) { block ->
-            Surface(Modifier.fillMaxWidth().padding(vertical = 6.dp), shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(block.label, style = MaterialTheme.typography.titleMedium)
-                    Text(dayName(block.dayOfWeek) + " · " + formatMinute(block.startMinute) + "–" + formatMinute(block.endMinute), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    ScheduleTag(if (block.kind == FixedScheduleKind.BREAK) "Istirahat" else "Rutinitas / kuliah")
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        OutlinedButton(onClick = { editId = block.id }, enabled = !state.busy) { Text("Edit jadwal") }
-                        OutlinedButton(onClick = { deleteId = block.id }, enabled = !state.busy) { Text("Hapus jadwal") }
-                    }
-                }
-            }
         }
         item {
             HorizontalDivider(modifier = Modifier.padding(top = 18.dp, bottom = 14.dp))
@@ -379,16 +351,6 @@ internal fun SettingsScreen(
             AccountSettings(state, model, Modifier.padding(top = 24.dp, bottom = 16.dp))
         }
     }
-    if (editId != null) key(editId) {
-        FixedEditor(editing, state.busy, model) { editId = null }
-    }
-    if (deleting != null) AlertDialog(
-        onDismissRequest = { deleteId = null },
-        title = { Text("Hapus jadwal tetap?") },
-        text = { Text(deleting.label) },
-        confirmButton = { OutlinedButton(onClick = { model.deleteFixed(deleting); deleteId = null }) { Text("Hapus") } },
-        dismissButton = { OutlinedButton(onClick = { deleteId = null }) { Text("Batal") } },
-    )
 }
 
 @Composable
@@ -419,64 +381,9 @@ private fun ProfileForm(profile: UserProfile, busy: Boolean, model: TazerViewMod
 }
 
 @Composable
-private fun FixedEditor(block: FixedSchedule?, busy: Boolean, model: TazerViewModel, close: () -> Unit) {
-    var label by rememberSaveable { mutableStateOf(block?.label.orEmpty()) }
-    var day by rememberSaveable { mutableIntStateOf(block?.dayOfWeek ?: 1) }
-    var kind by rememberSaveable { mutableStateOf((block?.kind ?: FixedScheduleKind.ROUTINE).name) }
-    var start by rememberSaveable { mutableStateOf(formatMinute(block?.startMinute ?: 480)) }
-    var end by rememberSaveable { mutableStateOf(formatMinute(block?.endMinute ?: 600)) }
-    var dayMenu by remember { mutableStateOf(false) }
-    var kindMenu by remember { mutableStateOf(false) }
-    val from = parseMinute(start)
-    val to = parseMinute(end)
-    val valid = from != null && to != null && from < 1440 && to != from
-    AlertDialog(
-        onDismissRequest = close,
-        title = { Text(if (block == null) "Tambah jadwal tetap" else "Edit jadwal tetap") },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState()).imePadding(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(label, { label = it }, label = { Text("Nama jadwal") }, singleLine = true, enabled = !busy)
-                androidx.compose.foundation.layout.Box {
-                    OutlinedButton(onClick = { dayMenu = true }, enabled = !busy) { Text(dayName(day)) }
-                    DropdownMenu(dayMenu, { dayMenu = false }) {
-                        (1..7).forEach { choice ->
-                            DropdownMenuItem(text = { Text(dayName(choice)) }, onClick = { day = choice; dayMenu = false })
-                        }
-                    }
-                }
-                androidx.compose.foundation.layout.Box {
-                    OutlinedButton(onClick = { kindMenu = true }, enabled = !busy) {
-                        Text(if (kind == FixedScheduleKind.ROUTINE.name) "Rutinitas / kuliah" else "Istirahat")
-                    }
-                    DropdownMenu(kindMenu, { kindMenu = false }) {
-                        FixedScheduleKind.entries.forEach { choice ->
-                            DropdownMenuItem(
-                                text = { Text(if (choice == FixedScheduleKind.ROUTINE) "Rutinitas / kuliah" else "Istirahat") },
-                                onClick = { kind = choice.name; kindMenu = false },
-                            )
-                        }
-                    }
-                }
-                TimeField(start, { start = it }, "Mulai", busy)
-                TimeField(end, { end = it }, "Selesai", busy)
-                if (valid && requireNotNull(to) < requireNotNull(from)) {
-                    Text("Jadwal berlanjut ke hari berikutnya.")
-                }
-            }
-        },
-        confirmButton = {
-            OutlinedButton(onClick = {
-                model.saveFixed(block, label, FixedScheduleKind.valueOf(kind), day, requireNotNull(from), requireNotNull(to), close)
-            }, enabled = !busy && valid && label.trim().length in 1..120) { Text("Simpan") }
-        },
-        dismissButton = { OutlinedButton(onClick = close) { Text("Batal") } },
-    )
-}
-
-@Composable
 private fun TimeField(text: String, update: (String) -> Unit, label: String, busy: Boolean) {
     OutlinedTextField(text, update, label = { Text(label + " (HH:mm)") }, singleLine = true, enabled = !busy,
         isError = parseMinute(text) == null, modifier = Modifier.fillMaxWidth())
 }
 
-private fun dayName(day: Int) = DayOfWeek.of(day).getDisplayName(TextStyle.FULL, Indonesian)
+internal fun dayName(day: Int) = DayOfWeek.of(day).getDisplayName(TextStyle.FULL, Indonesian)

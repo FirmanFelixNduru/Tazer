@@ -1,5 +1,6 @@
 package com.tazer.taskorganizer.data
 
+import com.tazer.taskorganizer.domain.ScheduleDraft
 import androidx.room.withTransaction
 import com.tazer.taskorganizer.domain.FocusClock
 import com.tazer.taskorganizer.domain.FocusMoment
@@ -133,6 +134,13 @@ class TaskRepository(
 
     fun observeFixedSchedules(uid: String): Flow<List<FixedSchedule>> =
         dao.observeFixedSchedules(requireUid(uid))
+
+    /** Saves reviewed import rows as weekly blocks in one transaction, so a failure saves none of them. */
+    suspend fun addFixedSchedules(uid: String, drafts: List<ScheduleDraft>): Int = database.withTransaction {
+        requireUid(uid)
+        drafts.forEach { addFixedSchedule(uid, it.title, FixedScheduleKind.ROUTINE, it.day, it.startMinute, it.endMinute) }
+        drafts.size
+    }
 
     suspend fun addFixedSchedule(
         uid: String,

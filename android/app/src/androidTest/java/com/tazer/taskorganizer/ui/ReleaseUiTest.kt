@@ -302,60 +302,214 @@ class ReleaseUiTest {
     }
 
     @Test
-    fun calendarAndSettingsPreviewTheSamePickedIcsAndOnlySaveOnConfirm() = runBlocking {
+    fun jadwalPlusOffersEventsAndFixedPagesAndFocusSettingsLiveOnlyInSettings() {
+        try {
+            launch()
+            waitFor("Schedule unavailable") { clickText("Jadwal") }
+            waitFor("Jadwal + button missing") { find { it.contentDescription?.toString() == "Tambah ke jadwal" } != null }
+            assertEquals("Focus settings must not repeat on Jadwal", null, findText("Pengaturan fokus"))
+            waitFor("Jadwal + button unavailable") { clickText("Tambah ke jadwal") }
+            waitFor("Two add options missing") { findText("Tambah Acara") != null && findText("Jadwal Tetap") != null }
+            assertEquals(2, nodes { it.text?.toString() in setOf("Tambah Acara", "Jadwal Tetap") }.size)
+            waitFor("Events option unavailable") { clickText("Tambah Acara") }
+            waitFor("Events page did not open") { findText("Judul acara") != null }
+            assertEquals("The events page is manual only", null, findText("Tambah Jadwal Tetap"))
+            assertEquals(null, findText("Impor .csv"))
+            waitFor("Back unavailable") { clickText("Kembali") }
+            waitFor("Jadwal + button unavailable") { clickText("Tambah ke jadwal") }
+            waitFor("Fixed option unavailable") { clickText("Jadwal Tetap") }
+            waitFor("Fixed page dropdown missing") { clickText("Tambah Jadwal Tetap") }
+            for (option in listOf("Input Manual", "Impor .ics", "Impor .csv", "Impor .xlsx (Excel)", "Foto / Screenshot Jadwal")) {
+                waitFor("Dropdown option $option missing") { nodes { hasText(it, option) }.isNotEmpty() }
+            }
+            for (icon in listOf("Ikon file CSV", "Ikon spreadsheet Excel")) {
+                waitFor("Vector icon $icon missing") { nodes { it.contentDescription?.toString()?.contains(icon) == true }.isNotEmpty() }
+            }
+            assertEquals("CSV and Excel must be drawn icons, not text badges", 0, nodes {
+                it.text?.toString() in setOf("CSV", "XLS", "XLSX")
+            }.size)
+            automation.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK)
+            waitFor("Back unavailable") { clickText("Kembali") }
+
+            waitFor("Calendar unavailable") { clickText("Kalender") }
+            waitFor("Calendar did not open") { findText("Tambah acara") != null }
+            assertEquals("Calendar no longer imports weekly schedules", null, findText("Impor .ics"))
+            waitFor("Settings unavailable") { clickText("Pengaturan") }
+            var focusButtons = 0
+            repeat(12) {
+                assertEquals("Settings no longer manages weekly schedules", null, findText("Tambah jadwal tetap"))
+                assertEquals(null, findText("Jadwal tetap"))
+                focusButtons = maxOf(focusButtons, nodes { it.text?.toString() == "Pengaturan fokus" }.size)
+                if (findText("Keluar") != null) return@repeat
+                gentleScroll()
+            }
+            assertEquals("Focus settings appear exactly once in Settings", 1, focusButtons)
+        } finally {
+            finish()
+        }
+    }
+
+    @Test
+    fun eventsPageSavesAManualEventWithEndTimeAndColour() = runBlocking {
+        val calendar = CalendarRepository(TazerDatabase.getInstance(context))
+        val title = "Acara " + UUID.randomUUID().toString().take(6)
+        try {
+            launch()
+            waitFor("Schedule unavailable") { clickText("Jadwal") }
+            waitFor("Jadwal + button unavailable") { clickText("Tambah ke jadwal") }
+            waitFor("Events option unavailable") { clickText("Tambah Acara") }
+            setText("Judul acara", title)
+            waitFor("Colour choice unavailable") { clickVisible("Warna Biru") }
+            waitFor("Save unavailable") { clickVisible("Simpan Acara") }
+            waitFor("Event was not saved") { runBlocking { calendar.observeEvents(UID).first().any { it.title == title } } }
+            val saved = calendar.observeEvents(UID).first().first { it.title == title }
+            assertEquals(Triple(9 * 60, 10 * 60, 1), Triple(saved.startMinute, saved.endMinute, saved.colorIndex))
+            waitFor("Saved list missing the event") { findText(title) != null || gentleScroll() }
+        } finally {
+            calendar.observeEvents(UID).first().filter { it.title == title }.forEach { calendar.deleteEvent(UID, it.id) }
+            finish()
+        }
+    }
+
+    @Test
+    fun fixedPageManualInputSavesOneBlockPerRepeatingDay() = runBlocking {
+        val dao = TazerDatabase.getInstance(context).tazerDao()
+        val title = "Manual " + UUID.randomUUID().toString().take(6)
+        try {
+            openFixedPage()
+            waitFor("Dropdown unavailable") { clickText("Tambah Jadwal Tetap") }
+            waitFor("Manual option unavailable") { clickText("Input Manual") }
+            setText("Nama jadwal / mata kuliah", title)
+            waitFor("Wednesday chip unavailable") { clickVisible("Rabu") }
+            waitFor("Save unavailable") { clickVisible("Simpan Jadwal") }
+            waitFor("Two weekly blocks were not saved") { runBlocking { dao.findFixedSchedules(UID).count { it.label == title } == 2 } }
+            assertEquals(setOf(1, 3), dao.findFixedSchedules(UID).filter { it.label == title }.map { it.dayOfWeek }.toSet())
+        } finally {
+            dao.findFixedSchedules(UID).filter { it.label == title }.forEach { dao.deleteFixedSchedule(UID, it.id) }
+            finish()
+        }
+    }
+
+    @Test
+    fun icsCsvAndXlsxImportsShareOnePreviewWithDuplicatesAndClashes() = runBlocking {
         val database = TazerDatabase.getInstance(context)
         val calendar = CalendarRepository(database)
         val dao = database.tazerDao()
-        val title = "Impor uji " + UUID.randomUUID().toString().take(8)
-        val document = File.createTempFile("tazer-ics-", ".ics", context.cacheDir)
-        document.writeText("""
-            BEGIN:VCALENDAR
-            VERSION:2.0
-            BEGIN:VEVENT
-            UID:$title-event
-            DTSTART;VALUE=DATE:20261126
-            SUMMARY:$title
-            END:VEVENT
-            BEGIN:VEVENT
-            UID:$title-weekly
-            DTSTART:20261126T090000
-            DTEND:20261126T100000
-            SUMMARY:$title
-            RRULE:FREQ=WEEKLY
-            END:VEVENT
-            END:VCALENDAR
-        """.trimIndent())
-        val filter = IntentFilter(Intent.ACTION_OPEN_DOCUMENT).apply {
-            addDataType("*/*")
-            addCategory(Intent.CATEGORY_OPENABLE)
+        val tag = UUID.randomUUID().toString().take(6)
+        val ics = File(context.cacheDir, "fixed-$tag.ics").apply {
+            writeText("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:$tag-event\r\nDTSTART;VALUE=DATE:20261126\r\n" +
+                "SUMMARY:Ics acara $tag\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nUID:$tag-weekly\r\nDTSTART:20261126T090000\r\n" +
+                "DTEND:20261126T100000\r\nSUMMARY:Ics kuliah $tag\r\nRRULE:FREQ=WEEKLY\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n")
         }
-        val monitor = instrumentation.addMonitor(
-            filter, Instrumentation.ActivityResult(Activity.RESULT_OK, Intent().setData(Uri.fromFile(document))), true,
-        )
-        try {
-            launch()
-            for (section in listOf("Kalender", "Pengaturan")) {
-                waitFor("$section unavailable") { clickText(section) }
-                waitFor("File picker button missing in $section") { clickVisible("Impor .ics") }
-                waitFor("Preview counts missing in $section") {
-                    findText("1 acara kalender baru") != null && findText("1 blok jadwal tetap baru") != null
-                }
-                assertTrue(calendar.observeEvents(UID).first().none { it.title == title })
-                assertTrue(dao.findFixedSchedules(UID).none { it.label == title })
-                val action = if (section == "Kalender") "Batal" else "Impor"
-                waitFor("Preview action $action unavailable") { clickText(action) }
-                waitFor("Preview did not close") { findText("Pratinjau impor .ics") == null }
+        val csv = File(context.cacheDir, "fixed-$tag.csv").apply {
+            writeText("Mata Kuliah;Hari;Jam;Ruang\nCsv basis $tag;Senin;08:00-09:40;B-201\nCsv basis $tag;Senin;08:00-09:40;B-201\n" +
+                "Csv algo $tag;Senin;09:00-10:30;Lab 2\n")
+        }
+        val xlsx = File(context.cacheDir, "fixed-$tag.xlsx").apply {
+            java.util.zip.ZipOutputStream(outputStream()).use { zip ->
+                zip.putNextEntry(java.util.zip.ZipEntry("xl/worksheets/sheet1.xml"))
+                zip.write(("<worksheet><sheetData>" +
+                    "<row r=\"1\"><c r=\"A1\" t=\"inlineStr\"><is><t>Nama</t></is></c><c r=\"B1\" t=\"inlineStr\"><is><t>Hari</t></is></c>" +
+                    "<c r=\"C1\" t=\"inlineStr\"><is><t>Mulai</t></is></c><c r=\"D1\" t=\"inlineStr\"><is><t>Selesai</t></is></c></row>" +
+                    "<row r=\"2\"><c r=\"A2\" t=\"inlineStr\"><is><t>Xlsx statistik $tag</t></is></c><c r=\"B2\" t=\"inlineStr\"><is><t>Sabtu</t></is></c>" +
+                    "<c r=\"C2\"><v>0.3125</v></c><c r=\"D2\"><v>0.38194444444444442</v></c></row>" +
+                    "</sheetData></worksheet>").toByteArray())
+                zip.closeEntry()
             }
-            assertEquals(2, monitor.hits)
-            assertEquals(1, calendar.observeEvents(UID).first().count { it.title == title })
-            assertEquals(1, dao.findFixedSchedules(UID).count { it.label == title })
-        } finally {
-            instrumentation.removeMonitor(monitor)
-            finish()
-            document.delete()
-            calendar.observeEvents(UID).first().filter { it.title == title }.forEach { calendar.deleteEvent(UID, it.id) }
-            dao.findFixedSchedules(UID).filter { it.label == title }.forEach { dao.deleteFixedSchedule(UID, it.id) }
         }
+        fun pick(file: File): Instrumentation.ActivityMonitor = instrumentation.addMonitor(
+            IntentFilter(Intent.ACTION_OPEN_DOCUMENT).apply { addCategory(Intent.CATEGORY_OPENABLE); addDataType("*/*") },
+            Instrumentation.ActivityResult(Activity.RESULT_OK, Intent().setData(Uri.fromFile(file))), true,
+        )
+        fun importFrom(option: String, file: File, check: () -> Unit, saveLabel: String) {
+            val monitor = pick(file)
+            try {
+                waitFor("Dropdown unavailable") { clickText("Tambah Jadwal Tetap") }
+                waitFor("$option unavailable") { clickText(option) }
+                waitFor("Picker for $option not requested") { monitor.hits > 0 }
+                waitFor("Unified preview for $option missing") { nodes { it.text?.toString()?.startsWith("Pratinjau impor") == true }.isNotEmpty() }
+                check()
+                waitFor("$saveLabel unavailable") { clickText(saveLabel) }
+                waitFor("Preview did not close") { nodes { it.text?.toString()?.startsWith("Pratinjau impor") == true }.isEmpty() }
+            } finally {
+                instrumentation.removeMonitor(monitor)
+            }
+        }
+        try {
+            openFixedPage()
+            importFrom("Impor .ics", ics, {
+                waitFor("ICS row missing") { findText("Ics kuliah $tag") != null }
+                waitFor("Events toggle missing") { findText("Juga impor 1 acara sekali ke Kalender") != null }
+            }, "Simpan 1 Jadwal Terpilih")
+            waitFor("ICS rows not saved") { runBlocking { dao.findFixedSchedules(UID).any { it.label == "Ics kuliah $tag" } } }
+            assertEquals(1, calendar.observeEvents(UID).first().count { it.title == "Ics acara $tag" })
+
+            importFrom("Impor .csv", csv, {
+                waitFor("Duplicate summary missing") { nodes { it.text?.toString()?.contains("1 duplikat dilewati") == true }.isNotEmpty() }
+                waitFor("Clash warning missing") { nodes { it.text?.toString()?.startsWith("Bentrok dengan") == true }.isNotEmpty() }
+                waitFor("Duplicate row label missing") { findText("Sudah tersimpan, dilewati") != null }
+            }, "Simpan 2 Jadwal Terpilih")
+            waitFor("CSV rows not saved") { runBlocking { dao.findFixedSchedules(UID).count { it.label.startsWith("Csv ") && it.label.endsWith(tag) } == 2 } }
+
+            importFrom("Impor .xlsx (Excel)", xlsx, {
+                waitFor("XLSX row missing") { findText("Xlsx statistik $tag") != null && findText("Sabtu · 07:30 – 09:10") != null }
+            }, "Simpan 1 Jadwal Terpilih")
+            waitFor("XLSX row not saved") { runBlocking { dao.findFixedSchedules(UID).any { it.label == "Xlsx statistik $tag" && it.startMinute == 450 } } }
+
+            importFrom("Impor .csv", csv, {
+                waitFor("Re-import should mark every row as saved") { nodes { it.text?.toString()?.contains("3 duplikat dilewati") == true }.isNotEmpty() }
+            }, "Batal")
+            assertEquals(2, dao.findFixedSchedules(UID).count { it.label.startsWith("Csv ") && it.label.endsWith(tag) })
+        } finally {
+            dao.findFixedSchedules(UID).filter { it.label.endsWith(tag) }.forEach { dao.deleteFixedSchedule(UID, it.id) }
+            calendar.observeEvents(UID).first().filter { it.title.endsWith(tag) }.forEach { calendar.deleteEvent(UID, it.id) }
+            listOf(ics, csv, xlsx).forEach(File::delete)
+            finish()
+        }
+    }
+
+    @Test
+    fun timetablePhotoFillsTheSamePreviewFromTheMockBackend() = runBlocking {
+        assumeTrue("Needs the loopback mock backend", AndroidIntegration(context).mockEnabled)
+        val dao = TazerDatabase.getInstance(context).tazerDao()
+        val image = File(context.cacheDir, "scan").apply { mkdirs() }.resolve("krs-test.png")
+        FileOutputStream(image).use { output ->
+            Bitmap.createBitmap(1400, 900, Bitmap.Config.ARGB_8888).apply { eraseColor(android.graphics.Color.WHITE) }
+                .compress(Bitmap.CompressFormat.PNG, 100, output)
+        }
+        val picked = FileProvider.getUriForFile(context, "${context.packageName}.scan", image)
+        var monitor: Instrumentation.ActivityMonitor? = null
+        try {
+            activity = instrumentation.startActivitySync(Intent(context, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
+            waitFor("Mock PRO workspace did not open") { findText("Belum Selesai") != null || (clickText("PRO") && false) }
+            dao.findFixedSchedules(MOCK_PRO).forEach { dao.deleteFixedSchedule(MOCK_PRO, it.id) }
+            waitFor("Schedule unavailable") { clickText("Jadwal") }
+            waitFor("Jadwal + button unavailable") { clickText("Tambah ke jadwal") }
+            waitFor("Fixed option unavailable") { clickText("Jadwal Tetap") }
+            monitor = instrumentation.addMonitor(IntentFilter(MediaStore.ACTION_PICK_IMAGES).apply { addDataType("image/*") },
+                Instrumentation.ActivityResult(Activity.RESULT_OK, Intent().setData(picked)), true)
+            waitFor("Dropdown unavailable") { clickText("Tambah Jadwal Tetap") }
+            waitFor("Photo option unavailable") { clickText("Foto / Screenshot Jadwal") }
+            waitFor("Gallery choice unavailable") { clickText("Galeri / Screenshot") }
+            waitFor("Photo preview missing") { findText("Pratinjau impor Foto") != null && findText("3 jadwal terbaca") != null }
+            waitFor("Save unavailable") { clickText("Simpan 3 Jadwal Terpilih") }
+            waitFor("Photo rows not saved") { runBlocking { dao.findFixedSchedules(MOCK_PRO).size == 3 } }
+            assertEquals(setOf(1, 3, 4), dao.findFixedSchedules(MOCK_PRO).map { it.dayOfWeek }.toSet())
+        } finally {
+            monitor?.let(instrumentation::removeMonitor)
+            dao.findFixedSchedules(MOCK_PRO).forEach { dao.deleteFixedSchedule(MOCK_PRO, it.id) }
+            image.delete()
+            finish()
+        }
+    }
+
+    private fun openFixedPage() {
+        launch()
+        waitFor("Schedule unavailable") { clickText("Jadwal") }
+        waitFor("Jadwal + button unavailable") { clickText("Tambah ke jadwal") }
+        waitFor("Fixed option unavailable") { clickText("Jadwal Tetap") }
+        waitFor("Fixed page did not open") { findText("Tambah Jadwal Tetap") != null }
     }
 
     @Test

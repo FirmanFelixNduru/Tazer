@@ -43,6 +43,8 @@ class CalendarRepository(private val database: TazerDatabase) {
         endEpochDay: Long,
         startMinute: Int?,
         description: String,
+        endMinute: Int? = null,
+        colorIndex: Int? = null,
     ): Boolean {
         val cleanTitle = title.trim()
         val cleanDescription = description.trim()
@@ -51,9 +53,14 @@ class CalendarRepository(private val database: TazerDatabase) {
         require(startEpochDay <= endEpochDay)
         require(startEpochDay >= LocalDate.MIN.toEpochDay() && endEpochDay <= LocalDate.MAX.toEpochDay())
         require(startMinute == null || startMinute in 0..1439)
+        // An end time needs a start time, and a same-day event must end after it starts.
+        require(endMinute == null || (startMinute != null && endMinute in 1..1440 &&
+            (endEpochDay > startEpochDay || endMinute > startMinute)))
+        require(colorIndex == null || colorIndex in 0..9)
 
         if (id != null) {
-            return dao.updateEvent(uid, id, cleanTitle, startEpochDay, endEpochDay, startMinute, cleanDescription) == 1
+            return dao.updateEvent(uid, id, cleanTitle, startEpochDay, endEpochDay, startMinute, cleanDescription,
+                endMinute, colorIndex) == 1
         }
 
         dao.insertEvent(CalendarEvent(
@@ -64,6 +71,8 @@ class CalendarRepository(private val database: TazerDatabase) {
             endEpochDay = endEpochDay,
             startMinute = startMinute,
             description = cleanDescription,
+            endMinute = endMinute,
+            colorIndex = colorIndex,
         ))
         return true
     }
@@ -82,7 +91,7 @@ class CalendarRepository(private val database: TazerDatabase) {
             when (item) {
                 is IcsItem.Event -> events += CalendarEvent(
                     importId(uid, "event", item), uid, item.title, item.startDate.toEpochDay(),
-                    item.endDate.toEpochDay(), item.startMinute, item.description,
+                    item.endDate.toEpochDay(), item.startMinute, item.description, item.endMinute,
                 )
                 is IcsItem.WeeklyBlock -> blocks += FixedSchedule(
                     importId(uid, "weekly", item), uid, item.title, FixedScheduleKind.ROUTINE,

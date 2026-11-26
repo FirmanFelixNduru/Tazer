@@ -1,6 +1,6 @@
 # Kontrak data dan API
 
-Kontrak API v1 dan skema Room v4. Perilaku perencanaan dan timer mengikuti [spesifikasi scheduler](SCHEDULER_SPEC.md).
+Kontrak API v1 dan skema Room v5. Perilaku perencanaan dan timer mengikuti [spesifikasi scheduler](SCHEDULER_SPEC.md).
 
 ## Room
 
@@ -13,11 +13,13 @@ Gunakan ID UUID string untuk tugas, blok tetap, dan sesi, serta Supabase Auth UI
 | `Subtask` | `id` (PK), `ownerUid`, `taskId` (FK komposit), `title`, `completed`, `position` |
 | `FixedSchedule` | `id` (PK), `ownerUid` (FK), `label`, `kind`, `dayOfWeek` (ISO 1–7), `startMinute`, `endMinute` |
 | `WorkSession` | `id` (PK), `taskId` dan `ownerUid` (FK komposit), `state`, `plannedStartAt`, `plannedEndAt`, `plannedMinutes`, `startedAt?`, `endedAt?`, `actualWorkMs?`, `timerBootId?`, `activeSinceElapsedMs?`, `cutoffElapsedMs?`, `lastObservedWorkMs?`, `revision`, `pausedRemainingMs?`, `pausedFromState?`, `workBeforeSegmentMs?`, `continuousWorkBeforeSegmentMs?`, `lastObservedAt?` |
-| `CalendarEvent` | `id` (PK), `ownerUid` (FK), `title`, `startEpochDay`, `endEpochDay`, `startMinute?`, `description` |
+| `CalendarEvent` | `id` (PK), `ownerUid` (FK), `title`, `startEpochDay`, `endEpochDay`, `startMinute?`, `description`, `endMinute?`, `colorIndex?` |
 
 Migrasi Room v1 ke v2 menambah tabel `CalendarEvent` dan indeks `(ownerUid,startEpochDay)`. Kedua tanggal sipil inklusif memakai `LocalDate.toEpochDay()`. `startMinute` null berarti seharian, atau menit lokal 0–1439 pada tanggal mulai. CalendarEvent disimpan per UID dan tampil bersama sesi, jadwal tetap, serta deadline tugas di kalender. Kapasitas scheduler tetap mengikuti blok tetap dan profil kerja.
 
 Migrasi Room v2 ke v3 menambah lima kolom nullable pada `WorkSession`. Saat `PAUSED`, `pausedRemainingMs` menyimpan sisa waktu bertanda dan `pausedFromState` menyimpan status asal. `workBeforeSegmentMs` dan `continuousWorkBeforeSegmentMs` membawa kerja kumulatif dan kontinu ke segmen berikutnya. `lastObservedAt` menyimpan waktu dinding checkpoint.
+
+Migrasi v4 ke v5 menambah `CalendarEvent.endMinute` (1–1440, jam selesai pada `endEpochDay`, wajib setelah `startMinute` untuk acara satu hari) dan `colorIndex` (slot palet 0–9) yang nullable, lalu membangun ulang trigger sinkronisasi acara agar perubahan warna saja tetap tersinkron. Payload Cloud Sync menambah kedua field opsional. Klien lama mengabaikannya, dan klien 1.8.0 membaca baris tanpa kedua field sebagai null.
 
 Migrasi v3 ke v4 mempertahankan baris lama, menambah baseline analyzer nullable dan FK `Subtask(taskId,ownerUid)` dengan cascade dan indeks. Checklist mendukung 40 langkah per tugas, masing-masing 1–120 karakter setelah trim. Tugas baru dan perubahan checklist pada formulir disimpan dalam satu transaksi. Perubahan dari sesi fokus dipertahankan jika formulir lama belum mengedit checklist.
 
@@ -37,6 +39,7 @@ Supabase Free menyediakan Auth dan PostgreSQL. Android memakai email/password de
 | `GET /auth/session` | Authorization: Bearer | `200 { "uid": "u1" }` |
 | `GET /subscription` | Authorization: Bearer | `200 { "tier": "PRO", "monthlyLimit": 100, "remaining": 99, "resetsAt": "2026-12-01T00:00:00Z" }` |
 | `POST /analyze-task` | Bearer dan JSON input | `200 { "difficultyScore": 4, "estimatedMinutes": 150 }` |
+| `POST /extract-schedule-image` | Bearer dan JSON gambar | `200 { "schedules": [...], "warnings": [...] }`. Lihat [Impor jadwal tetap](#impor-jadwal-tetap). |
 | `POST /extract-task-image` | Bearer dan JSON gambar | `200` hasil ekstraksi tugas dari foto atau screenshot. Lihat [Scan tugas dari gambar](#scan-tugas-dari-gambar). |
 | `GET /health` | Tanpa autentikasi | `200` jika binding siap atau `503` jika belum lengkap. Respons hanya memuat `ready` dan boolean konfigurasi publik `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `GEMINI_MODEL`. Pemeriksaan ini membaca konfigurasi tanpa memanggil layanan eksternal. |
 
@@ -58,16 +61,16 @@ Supabase Free menyediakan Auth dan PostgreSQL. Android memakai email/password de
 
 ### Impor iCalendar
 
-1. Kalender dan Jadwal Tetap membuka dokumen melalui Android Storage Access Framework. Parsing dan pratinjau memakai file lokal. Simpan setelah konfirmasi per akun.
+1. Halaman **Jadwal Tetap** membuka dokumen melalui Android Storage Access Framework. Parsing dan pratinjau memakai file lokal. Simpan setelah konfirmasi per akun.
 2. Baca `VEVENT` beserta UID, judul, awal, akhir, lokasi dan deskripsi. Buka lipatan baris dan dekode escape teks iCalendar. Normalisasi waktu UTC atau `TZID` ke zona profil. Tanggal akhir all-day iCalendar eksklusif dan dikonversi ke tanggal akhir inklusif Room. Jam satu kali mengikuti tanggal sipil profil.
 3. Pola mingguan tak berbatas yang dapat direpresentasikan oleh hari dan menit dalam satu pekan masuk Jadwal Tetap dan berlaku setelah diimpor. Pola dengan `COUNT` atau `UNTIL` diperluas menjadi acara Kalender jika masih dalam batas 512 kemunculan. Kalender menyimpan lokasi dan deskripsi di catatan acara. Jadwal Tetap menyimpan judul dan panjang blok. Pratinjau memisahkan kedua tujuan dan memperlihatkan acara yang dilewati, termasuk aturan pengecualian dan zona yang memerlukan definisi khusus atau punya offset relatif berubah.
-4. Identitas impor diturunkan dari pemilik, UID dan kemunculan. Impor ulang melewati baris yang sudah ada dan mempertahankan edit lokal. Komit melalui tabel Room yang sama agar jurnal Cloud Sync meneruskan perubahan sesuai RLS. Skema Room tetap v4.
+4. Identitas impor diturunkan dari pemilik, UID dan kemunculan. Impor ulang melewati baris yang sudah ada dan mempertahankan edit lokal. Komit melalui tabel Room yang sama agar jurnal Cloud Sync meneruskan perubahan sesuai RLS.
 
 ### Pencarian dan warna mata kuliah
 
 1. Tab **Belum Selesai** dan **Selesai** memakai satu kueri: teks dicocokkan per kata pada judul, mata kuliah, dan deskripsi tanpa membedakan huruf besar dan aksen, ditambah chip mata kuliah dan kesulitan 1–5. Chip mata kuliah hanya menampilkan mata kuliah yang masih cocok dengan teks dan kesulitan. **Reset filter** mengosongkan semuanya, dan empty state menjelaskan bahwa tidak ada tugas yang cocok.
 2. Kunci mata kuliah adalah nama yang di-trim, spasi digabung, dan huruf kecil. Warna otomatis memakai FNV-1a UTF-8 dari kunci itu, lalu finalizer MurmurHash3 agar nama yang mirip tetap tersebar, modulo 10 slot palet. Hasilnya sama di setiap perangkat. Setiap slot punya varian Light (halaman putih) dan Dark (halaman hitam). Kontras label terhadap chip minimal 4,5:1, dan titik warna terhadap halaman minimal 3:1. Warna tampil di kartu tugas, Jadwal, Kalender (sesi memakai warna mata kuliah, deadline tetap merah dengan titik warna), dan Statistik.
-3. Pilihan warna manual disimpan per UID di SharedPreferences `course_colors` dan ikut backup JSON. Pilihan ini tidak ikut Cloud Sync karena butuh tabel Supabase baru. Warna otomatis tetap konsisten antarperangkat. Skema Room tetap v4.
+3. Pilihan warna manual disimpan per UID di SharedPreferences `course_colors` dan ikut backup JSON. Pilihan ini tidak ikut Cloud Sync karena butuh tabel Supabase baru. Warna otomatis tetap konsisten antarperangkat.
 
 ### Ekspor .ics
 
@@ -81,6 +84,18 @@ Kalender dan Pengaturan menyimpan file melalui SAF `CreateDocument("text/calenda
 ### Paket tugas kelompok
 
 Tombol **Bagikan** pada kartu tugas membuka Android Share Sheet berisi ringkasan, tautan `tazer://import-task?d=…`, dan kode `TAZER-TASK-V1:…`. Payload berupa JSON base64url `{"v":1,"title","course","description","deadline"(RFC 3339 UTC),"difficulty","minutes","subtasks":[…]}` tanpa ID, UID, progres, atau token, dengan batas 24 KB dan 40 subtask. **Impor Paket Tugas** di Tambah tugas atau tautan `tazer://import-task` menampilkan pratinjau lengkap. Tugas dan semua subtask tersimpan dalam satu transaksi setelah user mengetuk **Simpan tugas**.
+
+### Navigasi jadwal dan acara
+
+1. Tombol `+` di layar **Jadwal** membuka dua pilihan, yaitu **Tambah Acara** dan **Jadwal Tetap**, yang masing-masing membuka halaman khusus. Jadwal tetap hanya dikelola di halaman ini, tidak lagi di Pengaturan maupun Kalender. **Pengaturan fokus** hanya ada di Pengaturan.
+2. Halaman **Acara** hanya memakai input manual: judul, tanggal mulai dan selesai (satu atau beberapa hari), jam mulai dan selesai lewat spinner atau seharian, warna penanda, catatan opsional, lalu daftar acara tersimpan dengan aksi edit dan hapus. Tombol tambah dan edit di Kalender membuka halaman yang sama. Warna penanda tampil di Kalender.
+
+### Impor jadwal tetap
+
+1. Tombol **Tambah Jadwal Tetap** membuka lima sumber. **Input Manual** menyimpan satu blok untuk setiap hari berulang yang dipilih. **Impor .ics** memakai parser iCalendar. **Impor .csv** memakai parser RFC 4180 lokal yang mendeteksi pemisah `,` atau `;`, termasuk kutipan, baris ganda, dan BOM. **Impor .xlsx** membaca `xl/sharedStrings.xml` dan lembar pertama (`sheet1.xml` atau nomor terkecil) dengan `java.util.zip` dan `XmlPullParser` bawaan Android, tanpa pustaka spreadsheet. **Foto / Screenshot Jadwal** memakai Gemini.
+2. Header tabel dicocokkan tanpa membedakan huruf besar dan aksen. Nama: `Nama`, `Mata Kuliah`, `Matkul`, `Kegiatan`, `Course`. Hari: `Hari` atau `Day`, termasuk beberapa hari dalam satu sel (`Senin, Rabu`, `Sel dan Kam`). Jam: `Jam Mulai` dan `Jam Selesai`, atau satu kolom rentang `08:25-10:10` (`.`, `–`, dan `s/d` juga diterima). Pecahan hari Excel dibaca sebagai jam. Tanpa header, kolom ditebak dari isinya. Ruang, dosen, dan kolom lain diabaikan. Batasnya 500 baris dan file 2 MB.
+3. `POST /extract-schedule-image` memakai body, validasi gambar, cek PRO, dan kuota 100 per bulan yang sama dengan `/extract-task-image`. Gambar tidak disimpan. Respons berisi `schedules` (maksimal 60 baris `{title, day 1–7, startTime HH:mm, endTime HH:mm}`, dengan `endTime` boleh `24:00`) dan `warnings`. Baris yang tidak lengkap dibuang dengan peringatan, dan ruang serta dosen tidak dikembalikan. BYOK Gemini mengirim gambar langsung dengan skema yang sama.
+4. Keempat jalur impor bermuara di satu pratinjau berisi checklist per baris dan edit per baris. Baris yang sudah tersimpan atau berulang dalam file ditandai duplikat dan dilewati. Bentrok jam dengan jadwal lain menjadi peringatan. Impor `.ics` juga menawarkan acara sekali ke Kalender. **Simpan X Jadwal Terpilih** menyimpan semua baris dalam satu transaksi Room, menghitung ulang slot scheduler, dan mengantrekan Cloud Sync.
 
 ### Catatan rilis
 

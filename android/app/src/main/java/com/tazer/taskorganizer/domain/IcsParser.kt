@@ -30,6 +30,8 @@ internal sealed interface IcsItem {
         val endDate: LocalDate,
         val startMinute: Int?,
         val description: String,
+        /** Local end time on [endDate] for timed events with a length; 1440 means midnight. */
+        val endMinute: Int? = null,
     ) : IcsItem
 
     data class WeeklyBlock(
@@ -241,13 +243,16 @@ internal object IcsParser {
         val source = start.at(zone)
         val local = source.withZoneSameInstant(zone)
         val end = length.end(source).withZoneSameInstant(zone)
-        val lastDate = if (end.toInstant() > local.toInstant() && end.toLocalTime() == LocalTime.MIDNIGHT) {
-            end.toLocalDate().minusDays(1)
-        } else {
-            end.toLocalDate()
+        val hasLength = end.toInstant() > local.toInstant()
+        val endsAtMidnight = hasLength && end.toLocalTime() == LocalTime.MIDNIGHT
+        val lastDate = if (endsAtMidnight) end.toLocalDate().minusDays(1) else end.toLocalDate()
+        val endMinute = when {
+            !hasLength -> null
+            endsAtMidnight -> 1440
+            else -> minute(end.toLocalTime())
         }
         return IcsItem.Event(uid, key, title, local.toLocalDate(), maxOf(local.toLocalDate(), lastDate),
-            minute(local.toLocalTime()), description)
+            minute(local.toLocalTime()), description, endMinute)
     }
 
     private fun weeklyBlocks(

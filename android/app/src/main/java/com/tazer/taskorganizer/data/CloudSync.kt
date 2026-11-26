@@ -208,7 +208,8 @@ internal class CloudSync(
                     put(name, value)
                 }
                 for (name in kind.numbers) {
-                    if (name in kind.optionalNumbers && data.isNull(name)) putNull(name)
+                    // Rows written by older app versions omit fields added later, such as event colours.
+                    if (name in kind.optionalNumbers && (!data.has(name) || data.isNull(name))) putNull(name)
                     else put(name, (data.get(name) as? Number ?: error("Invalid sync number")).toLong())
                 }
                 validate(kind, this)
@@ -260,6 +261,8 @@ internal class CloudSync(
                     java.time.LocalDate.ofEpochDay(number("startEpochDay"))
                     java.time.LocalDate.ofEpochDay(number("endEpochDay"))
                     require(row.getAsLong("startMinute")?.let { it in 0..1439 } != false)
+                    require(row.getAsLong("endMinute")?.let { it in 1..1440 } != false)
+                    require(row.getAsLong("colorIndex")?.let { it in 0..9 } != false)
                 }
                 SyncKind.SUBTASK -> require(uuid(text("taskId")) && text("title").length in 1..120 &&
                     number("completed") in 0..1 && number("position") in 0..Int.MAX_VALUE.toLong())

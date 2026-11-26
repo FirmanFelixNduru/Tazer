@@ -12,7 +12,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         UserProfile::class, Task::class, FixedSchedule::class, WorkSession::class, CalendarEvent::class,
         Subtask::class, SyncEntry::class, SyncCursor::class, SyncDevice::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 abstract class TazerDatabase : RoomDatabase() {
@@ -77,6 +77,16 @@ abstract class TazerDatabase : RoomDatabase() {
             }
         }
 
+        /** Adds event end times and marker colours; the sync trigger is rebuilt so colour-only edits still sync. */
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE CalendarEvent ADD COLUMN endMinute INTEGER")
+                db.execSQL("ALTER TABLE CalendarEvent ADD COLUMN colorIndex INTEGER")
+                db.execSQL("DROP TRIGGER IF EXISTS sync_calendar_events_UPDATE")
+                SyncJournal.install(db, seed = false)
+            }
+        }
+
         @Volatile
         private var instance: TazerDatabase? = null
 
@@ -87,7 +97,7 @@ abstract class TazerDatabase : RoomDatabase() {
 
         internal fun open(context: Context, name: String): TazerDatabase =
             Room.databaseBuilder(context.applicationContext, TazerDatabase::class.java, name)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .addCallback(object : Callback() {
                     override fun onCreate(db: SupportSQLiteDatabase) = SyncJournal.install(db, seed = false)
                 })

@@ -60,7 +60,8 @@ object TazerBackup {
         }))
         put("calendarEvents", JSONArray(data.events.map {
             obj("id" to it.id, "title" to it.title, "startEpochDay" to it.startEpochDay, "endEpochDay" to it.endEpochDay,
-                "startMinute" to it.startMinute, "description" to it.description)
+                "startMinute" to it.startMinute, "description" to it.description, "endMinute" to it.endMinute,
+                "colorIndex" to it.colorIndex)
         }))
         put("workSessions", JSONArray(data.sessions.map {
             obj("id" to it.id, "taskId" to it.taskId, "plannedStartAt" to it.plannedStartAt, "plannedEndAt" to it.plannedEndAt,
@@ -112,7 +113,10 @@ object TazerBackup {
             val end = it.getLong("endEpochDay")
             require(start <= end)
             CalendarEvent(id(it), "", text(it, "title", 1, 500), start, end,
-                int(it, "startMinute")?.also { minute -> require(minute in 0..1439) }, text(it, "description", 0, 10_000))
+                int(it, "startMinute")?.also { minute -> require(minute in 0..1439) }, text(it, "description", 0, 10_000),
+                // Optional since 1.8.0; backups from 1.7.0 simply omit them.
+                int(it, "endMinute")?.also { minute -> require(minute in 1..1440) },
+                int(it, "colorIndex")?.also { index -> require(index in 0..9) })
         }
         val sessions = rows(root, "workSessions") {
             val start = it.getLong("plannedStartAt")

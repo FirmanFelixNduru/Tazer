@@ -91,11 +91,14 @@ private fun MonthPicker(month: YearMonth, modifier: Modifier, contentPadding: Pa
 private data class AgendaItem(
     val key: String, val title: String, val kind: String, val time: String,
     val event: CalendarEvent? = null, val session: WorkSession? = null, val course: String? = null,
+    val eventColor: Int? = null,
 )
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
-internal fun CalendarScreen(workspace: Workspace, state: TazerState, zone: ZoneId, model: TazerViewModel) {
+internal fun CalendarScreen(
+    workspace: Workspace, state: TazerState, zone: ZoneId, model: TazerViewModel, openEvents: (String?) -> Unit,
+) {
     val today = localDate(state.now, zone)
     var selected by rememberSaveable { mutableLongStateOf(today.toEpochDay()) }
     val day = LocalDate.ofEpochDay(selected)
@@ -111,7 +114,8 @@ internal fun CalendarScreen(workspace: Workspace, state: TazerState, zone: ZoneI
             buildList {
                 workspace.events.filter { date.toEpochDay() in it.startEpochDay..it.endEpochDay }.forEach {
                     add(AgendaItem("event-" + it.id, it.title, "Acara",
-                        it.startMinute?.takeIf { _ -> date.toEpochDay() == it.startEpochDay }?.let(::formatMinute) ?: "Seharian", event = it))
+                        it.startMinute?.takeIf { _ -> date.toEpochDay() == it.startEpochDay }?.let(::formatMinute) ?: "Seharian", event = it,
+                        eventColor = it.colorIndex))
                 }
                 workspace.tasks.filter { localDate(it.deadlineAt, zone) == date }.forEach {
                     add(AgendaItem("task-" + it.id, it.title, "Deadline", formatTime(it.deadlineAt, zone), course = it.course))
@@ -127,8 +131,7 @@ internal fun CalendarScreen(workspace: Workspace, state: TazerState, zone: ZoneI
             }.sortedWith(compareBy({ it.time != "Seharian" }, { it.time }, { it.title }))
         }
     }
-    var editId by rememberSaveable { mutableStateOf<String?>(null) }
-    val openEvent: (CalendarEvent) -> Unit = { editId = it.id }
+    val openEvent: (CalendarEvent) -> Unit = { openEvents(it.id) }
     LazyColumn(
         modifier = Modifier.semantics { testTagsAsResourceId = true },
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
@@ -168,13 +171,10 @@ internal fun CalendarScreen(workspace: Workspace, state: TazerState, zone: ZoneI
         item {
             Row(Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(DayFormat.format(day), Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
-                FilledTonalButton(onClick = { editId = "" }, enabled = !state.busy) { Text("Tambah acara") }
+                FilledTonalButton(onClick = { openEvents(null) }, enabled = !state.busy) { Text("Tambah acara") }
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                ExportIcsButton(model, Modifier.padding(end = 8.dp))
-                key(workspace.profile.ownerUid, workspace.profile.zoneId) {
-                    ImportIcsButton(workspace.profile.ownerUid, state.busy, model)
-                }
+                ExportIcsButton(model)
             }
             if (agenda[day].isNullOrEmpty()) {
                 Text("Belum ada agenda pada tanggal ini.", Modifier.padding(vertical = 14.dp),
@@ -183,7 +183,7 @@ internal fun CalendarScreen(workspace: Workspace, state: TazerState, zone: ZoneI
         }
         items(agenda[day].orEmpty(), key = AgendaItem::key) { item ->
             ListItem(
-                headlineContent = { AgendaPill(item.title, item.kind, course = item.course) },
+                headlineContent = { AgendaPill(item.title, item.kind, course = item.course, eventColor = item.eventColor) },
                 supportingContent = {
                     val details = item.event?.description?.takeIf(String::isNotBlank)
                     Text(listOfNotNull(item.kind, details).joinToString(" · "))
@@ -198,13 +198,6 @@ internal fun CalendarScreen(workspace: Workspace, state: TazerState, zone: ZoneI
                 colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surface),
             )
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-        }
-    }
-    val id = editId
-    if (id != null) {
-        val event = workspace.events.firstOrNull { it.id == id }
-        if (id.isEmpty() || event != null) key(id) {
-            EventEditor(event, day, state.busy, model) { editId = null }
         }
     }
 }
@@ -289,6 +282,7 @@ private fun CalendarWeek(
                             compact = true,
                             // A cell summarising several items should not wear one course's colour.
                             course = first.course.takeIf { entries.size == 1 },
+                            eventColor = first.eventColor.takeIf { entries.size == 1 },
                         )
                         if (entries.size == 1 && first.time != "Seharian") {
                             Text(
@@ -309,11 +303,13 @@ private fun CalendarWeek(
                     val start = maxOf(base, event.startEpochDay)
                     val end = minOf(base + 6, event.endEpochDay)
                     if (start > cursor) Spacer(Modifier.weight((start - cursor).toFloat()))
+                    val (spanColor, spanInk) = event.colorIndex?.let { paletteContainer(it) }
+                        ?: (colors.secondaryContainer to colors.onSecondaryContainer)
                     Surface(
                         onClick = { edit(event) },
                         modifier = Modifier.weight((end - start + 1).toFloat()).padding(horizontal = 2.dp).testTag("calendar-event-span"),
-                        color = colors.secondaryContainer,
-                        contentColor = colors.onSecondaryContainer,
+                        color = spanColor,
+                        contentColor = spanInk,
                         shape = RoundedCornerShape(7.dp),
                     ) {
                         Text(event.title, Modifier.padding(horizontal = 5.dp, vertical = 4.dp),
@@ -330,12 +326,14 @@ private fun CalendarWeek(
 @Composable
 private fun AgendaPill(
     title: String, kind: String, modifier: Modifier = Modifier, compact: Boolean = false, course: String? = null,
+    eventColor: Int? = null,
 ) {
     val colors = MaterialTheme.colorScheme
     // Sessions take their course colour; deadlines stay red and carry a course dot.
     val (background, ink) = when {
         kind == "Deadline" -> colors.errorContainer to colors.onErrorContainer
         course != null -> courseContainer(course)
+        eventColor != null -> paletteContainer(eventColor)
         kind == "Sesi fokus" -> colors.primaryContainer to colors.onPrimaryContainer
         else -> colors.secondaryContainer to colors.onSecondaryContainer
     }
@@ -355,57 +353,3 @@ private fun AgendaPill(
     }
 }
 
-@Composable
-private fun EventEditor(event: CalendarEvent?, selected: LocalDate, busy: Boolean, model: TazerViewModel, close: () -> Unit) {
-    var title by rememberSaveable { mutableStateOf(event?.title.orEmpty()) }
-    var description by rememberSaveable { mutableStateOf(event?.description.orEmpty()) }
-    var from by rememberSaveable { mutableLongStateOf(event?.startEpochDay ?: selected.toEpochDay()) }
-    var through by rememberSaveable { mutableLongStateOf(event?.endEpochDay ?: selected.toEpochDay()) }
-    var allDay by rememberSaveable { mutableStateOf(event?.startMinute == null) }
-    var time by rememberSaveable { mutableStateOf(formatMinute(event?.startMinute ?: 540)) }
-    var deleting by rememberSaveable { mutableStateOf(false) }
-    val minute = parseMinute(time)?.takeIf { it < 1440 }
-    if (deleting && event != null) {
-        AlertDialog(
-            onDismissRequest = { deleting = false }, title = { Text("Hapus acara?") }, text = { Text(event.title) },
-            confirmButton = { Button(enabled = !busy, onClick = { model.deleteEvent(event.id, close) }) { Text("Hapus") } },
-            dismissButton = { OutlinedButton(onClick = { deleting = false }) { Text("Batal") } },
-        )
-        return
-    }
-    AlertDialog(
-        onDismissRequest = { if (!busy) close() },
-        title = { Text(if (event == null) "Tambah acara" else "Edit acara") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.heightIn(max = 390.dp)
-                .imePadding().verticalScroll(rememberScrollState())) {
-                OutlinedTextField(title, { title = it }, label = { Text("Judul acara") }, singleLine = true, enabled = !busy)
-                EventDate("Mulai", from, !busy) { from = it; through = maxOf(through, it) }
-                EventDate("Sampai", through, !busy) { through = it }
-                if (through < from) Text("Tanggal akhir harus sama atau setelah tanggal mulai.", color = MaterialTheme.colorScheme.error)
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Switch(checked = allDay, onCheckedChange = { allDay = it }, enabled = !busy,
-                        modifier = Modifier.semantics { contentDescription = "Seharian" })
-                    Text("Seharian")
-                }
-                if (!allDay) OutlinedTextField(time, { time = it }, label = { Text("Jam mulai (HH:mm)") }, singleLine = true,
-                    enabled = !busy, isError = minute == null)
-                OutlinedTextField(description, { description = it }, label = { Text("Keterangan (opsional)") }, enabled = !busy)
-                if (event != null) OutlinedButton(onClick = { deleting = true }, enabled = !busy) { Text("Hapus acara") }
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = { model.saveEvent(event?.id, title, from, through, if (allDay) null else minute, description, close) },
-                enabled = !busy && title.isNotBlank() && through >= from && (allDay || minute != null),
-            ) { Text("Simpan acara") }
-        },
-        dismissButton = { OutlinedButton(onClick = close, enabled = !busy) { Text("Batal") } },
-    )
-}
-
-@Composable
-private fun EventDate(label: String, epochDay: Long, enabled: Boolean, change: (Long) -> Unit) {
-    val date = LocalDate.ofEpochDay(epochDay)
-    PickerDateButton(date, enabled, label + " · " + DayFormat.format(date)) { change(it.toEpochDay()) }
-}

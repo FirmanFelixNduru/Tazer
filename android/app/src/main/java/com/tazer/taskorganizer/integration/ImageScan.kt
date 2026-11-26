@@ -177,7 +177,14 @@ private fun scanSchema(): JSONObject {
 }
 
 /** BYOK: the image goes straight from the device to Gemini with the user's own key. */
-internal fun extractWithGemini(body: JSONObject, credential: ByokCredential): ImageExtraction {
+internal fun extractWithGemini(body: JSONObject, credential: ByokCredential): ImageExtraction =
+    geminiImageJson(body, credential, scanInstructions(body.string("localDate"), body.string("timeZone")),
+        "Ekstrak tugas dari gambar ini.", scanSchema()).imageExtraction()
+
+/** Sends one inline image to Gemini with a JSON schema and returns the parsed answer object. */
+internal fun geminiImageJson(
+    body: JSONObject, credential: ByokCredential, instructions: String, prompt: String, schema: JSONObject,
+): JSONObject {
     if (credential.settings.provider != ByokProvider.GEMINI) fail(IntegrationError.BYOK_GEMINI_REQUIRED)
     validateByok(credential.settings, credential.apiKey)
     try {
@@ -187,18 +194,16 @@ internal fun extractWithGemini(body: JSONObject, credential: ByokCredential): Im
             "POST",
             mapOf("x-goog-api-key" to credential.apiKey),
             json(
-                "systemInstruction" to json("parts" to JSONArray(listOf(
-                    json("text" to scanInstructions(body.string("localDate"), body.string("timeZone"))),
-                ))),
+                "systemInstruction" to json("parts" to JSONArray(listOf(json("text" to instructions)))),
                 "contents" to JSONArray(listOf(json("role" to "user", "parts" to JSONArray(listOf(
-                    image, json("text" to "Ekstrak tugas dari gambar ini."),
+                    image, json("text" to prompt),
                 ))))),
-                "generationConfig" to json("responseMimeType" to "application/json", "responseJsonSchema" to scanSchema()),
+                "generationConfig" to json("responseMimeType" to "application/json", "responseJsonSchema" to schema),
             ),
             timeoutMs = SCAN_TIMEOUT_MS,
         )
         if (response.status != 200) fail(IntegrationError.AI_UNAVAILABLE)
-        return parseJson(geminiText(response.json())).imageExtraction()
+        return parseJson(geminiText(response.json()))
     } catch (failure: IntegrationException) {
         if (failure.code == IntegrationError.NETWORK_UNAVAILABLE) throw failure
         fail(IntegrationError.AI_UNAVAILABLE)

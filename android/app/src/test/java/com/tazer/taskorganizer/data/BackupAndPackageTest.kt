@@ -18,7 +18,7 @@ class BackupAndPackageTest {
         listOf(task, done),
         listOf(Subtask("s1", uid, "t1", "Gambar ERD", true, 0), Subtask("s2", uid, "t1", "Tulis laporan", false, 1)),
         listOf(FixedSchedule("f1", uid, "Kuliah Algoritma", FixedScheduleKind.ROUTINE, 1, 480, 600)),
-        listOf(CalendarEvent("e1", uid, "UTS", 20_800, 20_800, 540, "Ruang 3")),
+        listOf(CalendarEvent("e1", uid, "UTS", 20_800, 20_800, 540, "Ruang 3", endMinute = 660, colorIndex = 4)),
         listOf(WorkSession("w1", "t2", uid, WorkSessionState.DONE, 1_794_000_000_000, 1_794_003_000_000, 50,
             1_794_000_000_000, 1_794_003_000_000, 2_900_000, "boot-1", 10, 20, 30, 4)),
         mapOf("basis data" to 3),
@@ -39,6 +39,17 @@ class BackupAndPackageTest {
         // Device timer checkpoints are not portable.
         assertNull(session.timerBootId)
         assertEquals(0L, session.revision)
+    }
+
+    @Test
+    fun backupsFrom170WithoutEventEndOrColourStillRestore() {
+        val old = JSONObject(TazerBackup.encode(data, 1_796_000_000_000, "1.7.0"))
+        old.getJSONArray("calendarEvents").getJSONObject(0).apply { remove("endMinute"); remove("colorIndex") }
+        val event = TazerBackup.decode(old.toString()).events.single()
+        assertNull(event.endMinute)
+        assertNull(event.colorIndex)
+        old.getJSONArray("calendarEvents").getJSONObject(0).put("colorIndex", 12)
+        assertThrows(IllegalArgumentException::class.java) { TazerBackup.decode(old.toString()) }
     }
 
     @Test

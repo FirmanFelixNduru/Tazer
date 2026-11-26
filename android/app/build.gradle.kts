@@ -54,8 +54,8 @@ android {
         applicationId = "com.tazer.taskorganizer"
         minSdk = 26
         targetSdk = 37
-        versionCode = 13
-        versionName = "1.7.0"
+        versionCode = 14
+        versionName = "1.8.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "SUPABASE_URL", "\"$supabaseOrigin\"")
         buildConfigField("String", "SUPABASE_PUBLISHABLE_KEY", "\"$publishableKey\"")
@@ -138,6 +138,7 @@ dependencies {
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20250517")
+    testImplementation("net.sf.kxml:kxml2:2.3.0")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
     androidTestImplementation("androidx.test:runner:1.7.0")
 }

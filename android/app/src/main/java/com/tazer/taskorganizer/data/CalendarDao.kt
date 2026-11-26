@@ -22,7 +22,7 @@ internal interface CalendarDao {
     @Query("""
         UPDATE CalendarEvent
         SET title = :title, startEpochDay = :startEpochDay, endEpochDay = :endEpochDay,
-            startMinute = :startMinute, description = :description
+            startMinute = :startMinute, description = :description, endMinute = :endMinute, colorIndex = :colorIndex
         WHERE ownerUid = :uid AND id = :id
     """)
     suspend fun updateEvent(
@@ -33,6 +33,8 @@ internal interface CalendarDao {
         endEpochDay: Long,
         startMinute: Int?,
         description: String,
+        endMinute: Int?,
+        colorIndex: Int?,
     ): Int
 
     @Query("DELETE FROM CalendarEvent WHERE ownerUid = :uid AND id = :id")

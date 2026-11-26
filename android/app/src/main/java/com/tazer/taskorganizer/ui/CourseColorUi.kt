@@ -72,6 +72,13 @@ internal fun courseContainer(course: String): Pair<Color, Color> {
     return color(tone.container) to color(tone.ink)
 }
 
+/** Chip colours for a palette slot chosen directly, such as an event's calendar marker. */
+@Composable
+internal fun paletteContainer(index: Int): Pair<Color, Color> {
+    val tone = CourseColors.palette[index.coerceIn(CourseColors.palette.indices)].tone(LocalTazerDark.current)
+    return color(tone.container) to color(tone.ink)
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun CourseColorSetting(courses: List<String>, choose: (String, Int?) -> Unit) {

@@ -61,16 +61,12 @@ private fun captureUri(context: Context): Uri {
     return FileProvider.getUriForFile(context, "${context.packageName}.scan", File(directory, "capture.jpg"))
 }
 
+/** Gallery (Photo Picker, no storage permission) and camera (FileProvider, permission asked on use) launchers. */
+internal class ImageSource(val pickGallery: () -> Unit, val takePhoto: () -> Unit)
+
 @Composable
-internal fun ScanImageButton(
-    available: Boolean,
-    enabled: Boolean,
-    scanning: Boolean,
-    onImage: (Uri) -> Unit,
-    onMessage: (String) -> Unit,
-) {
+internal fun rememberImageSource(onImage: (Uri) -> Unit, onMessage: (String) -> Unit): ImageSource {
     val context = LocalContext.current
-    var choosing by rememberSaveable { mutableStateOf(false) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         uri?.let(onImage)
     }
@@ -85,6 +81,25 @@ internal fun ScanImageButton(
     val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) openCamera() else onMessage("Izin kamera ditolak. Kamu tetap bisa memilih gambar dari Galeri / Screenshot.")
     }
+    return ImageSource(
+        pickGallery = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+        takePhoto = {
+            val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+            if (granted) openCamera() else cameraPermission.launch(Manifest.permission.CAMERA)
+        },
+    )
+}
+
+@Composable
+internal fun ScanImageButton(
+    available: Boolean,
+    enabled: Boolean,
+    scanning: Boolean,
+    onImage: (Uri) -> Unit,
+    onMessage: (String) -> Unit,
+) {
+    var choosing by rememberSaveable { mutableStateOf(false) }
+    val source = rememberImageSource(onImage, onMessage)
 
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Box {
@@ -107,7 +122,7 @@ internal fun ScanImageButton(
                     leadingIcon = { TazerIcon(TazerGlyph.Image) },
                     onClick = {
                         choosing = false
-                        picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                        source.pickGallery()
                     },
                 )
                 DropdownMenuItem(
@@ -115,9 +130,7 @@ internal fun ScanImageButton(
                     leadingIcon = { TazerIcon(TazerGlyph.Camera) },
                     onClick = {
                         choosing = false
-                        val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
-                            PackageManager.PERMISSION_GRANTED
-                        if (granted) openCamera() else cameraPermission.launch(Manifest.permission.CAMERA)
+                        source.takePhoto()
                     },
                 )
             }

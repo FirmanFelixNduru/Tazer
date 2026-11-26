@@ -135,7 +135,56 @@ class CloudSyncTest {
                 val remote = Remote()
                 CloudSync(db, remote::call).sync(uid)
                 assertEquals(setOf("tasks", "profile", "calendar_events"), remote.rows.keys.map { it.second.first }.toSet())
-                assertEquals(4, db.openHelper.writableDatabase.version)
+                assertEquals(5, db.openHelper.writableDatabase.version)
+            }
+        } finally {
+            context.deleteDatabase(name)
+        }
+    }
+
+    @Test
+    fun eventEndTimeAndColourSyncIncludingColourOnlyEditsAndOlderPayloads() = runBlocking {
+        val name = "sync-event-v5-$uid.db"
+        val eventId = UUID.randomUUID().toString()
+        try {
+            context.openOrCreateDatabase(name, Context.MODE_PRIVATE, null).use { db ->
+                db.setForeignKeyConstraintsEnabled(true)
+                instrumentation.context.assets.open("tazer-v3.sql").bufferedReader().useLines { lines ->
+                    lines.forEach { db.execSQL(it) }
+                }
+                db.execSQL("INSERT INTO UserProfile VALUES (?, 'Asia/Jakarta',480,1320,NULL)", arrayOf(uid))
+                db.execSQL("INSERT INTO CalendarEvent VALUES (?,?, 'Seminar',20000,20000,540,'')", arrayOf(eventId, uid))
+                db.version = 3
+            }
+            TazerDatabase.open(context, name).useDb { db ->
+                assertEquals(5, db.openHelper.writableDatabase.version)
+                val calendar = CalendarRepository(db)
+                val migrated = calendar.observeEvents(uid).first().single()
+                assertNull(migrated.endMinute)
+                assertNull(migrated.colorIndex)
+                val remote = Remote()
+                val sync = CloudSync(db, remote::call)
+                val key = uid to ("calendar_events" to eventId)
+                sync.sync(uid)
+
+                assertTrue(calendar.saveEvent(uid, eventId, "Seminar", 20000, 20000, 540, "", 600, null))
+                sync.sync(uid)
+                assertEquals(600, remote.rows.getValue(key).getJSONObject("payload").getInt("endMinute"))
+
+                // A colour-only edit must still reach the journal after the v5 trigger rebuild.
+                assertTrue(calendar.saveEvent(uid, eventId, "Seminar", 20000, 20000, 540, "", 600, 3))
+                sync.sync(uid)
+                assertEquals(3, remote.rows.getValue(key).getJSONObject("payload").getInt("colorIndex"))
+
+                // An older app version writes the event without the 1.8.0 fields.
+                val older = JSONObject(remote.rows.getValue(key).getJSONObject("payload").toString())
+                    .apply { remove("endMinute"); remove("colorIndex"); put("title", "Seminar lama") }
+                remote.inject(uid, "calendar_events", eventId, older, version = 99, writer = UUID.randomUUID().toString())
+                sync.sync(uid)
+                val pulled = calendar.observeEvents(uid).first().single()
+                assertEquals("Seminar lama", pulled.title)
+                assertNull(pulled.endMinute)
+                assertNull(pulled.colorIndex)
             }
         } finally {
             context.deleteDatabase(name)
@@ -150,6 +199,11 @@ class CloudSyncTest {
         var offline = false
         var duringPush: (suspend () -> Unit)? = null
         private var cursor = 0L
+
+        fun inject(uid: String, kind: String, id: String, payload: JSONObject, version: Long, writer: String) {
+            rows[uid to (kind to id)] = JSONObject().put("kind", kind).put("row_id", id).put("version", version)
+                .put("writer", writer).put("payload", payload).put("change_id", ++cursor)
+        }
 
         suspend fun call(uid: String, name: String, body: JSONObject): Any {
             if (offline) throw IOException("Offline fixture")

@@ -1,6 +1,6 @@
 import { analysisOutput, taskInput } from "./analysis.js";
 import type { TaskInput } from "./analysis.js";
-import { imageExtractionOutput, imageInput, MAX_IMAGE_BODY_BYTES } from "./image.js";
+import { imageExtractionOutput, imageInput, MAX_IMAGE_BODY_BYTES, scheduleExtractionOutput } from "./image.js";
 import type { ImageInput } from "./image.js";
 
 export type Tier = "FREE" | "PRO" | "BYOK";
@@ -28,6 +28,7 @@ export interface Dependencies {
   entitlement(uid: string, consume: boolean): Promise<Subscription & { granted: boolean }>;
   analyze(input: TaskInput, includeSubtasks: boolean): Promise<unknown>;
   extractImage(input: ImageInput): Promise<unknown>;
+  extractSchedule(input: ImageInput): Promise<unknown>;
   now?: () => Date;
   readiness?: () => Readiness;
 }
@@ -94,7 +95,8 @@ export function createHandler(deps: Dependencies) {
       const health = deps.readiness();
       return json(health, health.ready ? 200 : 503);
     }
-    const image = path === "/extract-task-image";
+    const schedule = path === "/extract-schedule-image";
+    const image = schedule || path === "/extract-task-image";
     const consuming = image || path === "/analyze-task";
     const method = consuming ? "POST" : "GET";
     if (path !== "/auth/session" && path !== "/subscription" && !consuming) {
@@ -141,7 +143,9 @@ export function createHandler(deps: Dependencies) {
     try {
       if (image) {
         // The image only lives in this request; it is never logged or stored.
-        const extraction = imageExtractionOutput(await deps.extractImage(input as ImageInput));
+        const extraction = schedule
+          ? scheduleExtractionOutput(await deps.extractSchedule(input as ImageInput))
+          : imageExtractionOutput(await deps.extractImage(input as ImageInput));
         if (extraction) return json(extraction);
         return error("AI_UNAVAILABLE");
       }

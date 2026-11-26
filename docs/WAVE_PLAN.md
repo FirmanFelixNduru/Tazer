@@ -69,6 +69,12 @@ Tempel awalan itu sebelum instruksi peran. Lead memakai model yang ditetapkan pa
 2. Uji di emulator API 37: alur search/filter, warna chip pada Light dan Dark serta warna pilihan, ekspor `.ics` dan backup lewat SAF, restore dengan pratinjau, paket tugas melalui Share Sheet dan tautan, serta catatan rilis yang bersih. Lakukan juga upgrade signed dari 1.6.0.
 3. Build APK signed 1.7.0 kode 13. Jalankan lint, secret scan histori dan APK, smoke test Light dan Dark, lalu publikasikan rilis dan cek `releases/latest`.
 
+## Gate rilis 1.8.0
+
+1. Uji `/extract-schedule-image` untuk auth, tier, MIME/signature, batas ukuran, kuota bersama, dan validasi output. Deploy Worker lalu uji `/health`, `401`, `400`, `413`, dan satu ekstraksi KRS nyata ke Gemini Free.
+2. Di JVM, uji parser CSV (pemisah `,` dan `;`), XLSX OpenXML, ekstraksi jadwal JSON, deduplikasi dan bentrok, serta `.ics` dan backup untuk jam selesai dan warna acara. Di emulator API 37, uji tombol `+` Jadwal, halaman Acara dan Jadwal Tetap, lima sumber impor dengan ikon vektor, pratinjau terpadu, satu tombol Pengaturan fokus, migrasi Room v5 dengan Cloud Sync, serta upgrade signed dari 1.7.0.
+3. Build APK signed 1.8.0 kode 14. Jalankan lint, secret scan, smoke test Light dan Dark, lalu publikasikan rilis.
+
 ## Template handoff
 
 1. **Wave [N] — Langkah [X] dari [Y] (~[Z] menit).** [Aksi atau hasil inti, model dan effort aktual.]

@@ -66,5 +66,15 @@ export function mockDependencies(now = () => new Date()): Dependencies {
         warnings: ["Jam deadline tidak terlihat, diatur ke 23:59."],
       };
     },
+    async extractSchedule() {
+      return {
+        schedules: [
+          { title: "Basis Data", day: 1, startTime: "08:00", endTime: "09:40" },
+          { title: "Algoritma", day: 3, startTime: "10:00", endTime: "11:40" },
+          { title: "Basis Data", day: 4, startTime: "13:00", endTime: "14:40" },
+        ],
+        warnings: [],
+      };
+    },
   };
 }

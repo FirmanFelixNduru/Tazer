@@ -51,6 +51,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
@@ -167,6 +168,9 @@ private fun WorkspaceScreen(
     var viewDay by rememberSaveable(state.uid) { mutableStateOf<String?>(null) }
     var deferDialog by rememberSaveable(state.uid) { mutableStateOf(false) }
     var permissionDialog by rememberSaveable(state.uid) { mutableStateOf(false) }
+    // "events" or "fixed": full pages opened from Jadwal (and Kalender for events).
+    var page by rememberSaveable(state.uid) { mutableStateOf<String?>(null) }
+    var pageEventId by rememberSaveable(state.uid) { mutableStateOf<String?>(null) }
     val sectionState = rememberSaveableStateHolder()
     val zone = ZoneId.of(workspace.profile.zoneId)
     val focusTarget = state.focusTarget
@@ -175,7 +179,10 @@ private fun WorkspaceScreen(
     val focusedTask = workspace.tasks.firstOrNull { it.id == focusedSession?.taskId }
     val activeSession = workspace.sessions.firstOrNull { it.state in ActiveFocusStates }
     val activeTitle = workspace.tasks.firstOrNull { it.id == activeSession?.taskId }?.title
-    val editing = taskEditorId != null && !inFocus
+    val onPage = page != null && !inFocus
+    val editing = taskEditorId != null && !inFocus && !onPage
+    val openEvents: (String?) -> Unit = { id -> pageEventId = id; page = "events" }
+    val closePage = { page = null; pageEventId = null }
     val editedTask = workspace.tasks.firstOrNull { it.id == taskEditorId }
     val closeEditor = { taskEditorId = null }
     LaunchedEffect(scheduleRequest) {
@@ -189,6 +196,7 @@ private fun WorkspaceScreen(
         }
     }
     BackHandler(enabled = editing, onBack = closeEditor)
+    BackHandler(enabled = onPage, onBack = closePage)
     BackHandler(enabled = inFocus, onBack = model::closeFocus)
     BackHandler(enabled = !inFocus && !editing && section != 0) { section = 0 }
     Scaffold(
@@ -197,20 +205,25 @@ private fun WorkspaceScreen(
                 title = {
                     Text(when {
                         inFocus -> "Timer fokus"
+                        onPage -> if (page == "events") "Acara" else "Jadwal Tetap"
                         editing -> if (editedTask == null) "Tambah tugas" else "Edit tugas"
                         else -> Sections[section]
                     })
                 },
                 navigationIcon = {
-                    if (editing || inFocus) OutlinedButton(
+                    if (editing || inFocus || onPage) OutlinedButton(
                         modifier = Modifier.padding(start = 4.dp, end = 4.dp),
-                        onClick = if (inFocus) model::closeFocus else closeEditor,
+                        onClick = when {
+                            inFocus -> model::closeFocus
+                            onPage -> closePage
+                            else -> closeEditor
+                        },
                     ) { Text("Kembali") }
                 },
             )
         },
         bottomBar = {
-            if (!inFocus && !editing) Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            if (!inFocus && !editing && !onPage) Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 if (activeSession != null && activeTitle != null) {
                     FloatingTimerDeck(activeSession, activeTitle, model.focus) { model.openFocus(activeSession) }
                 }
@@ -228,11 +241,14 @@ private fun WorkspaceScreen(
             }
         },
         floatingActionButton = {
-            if (section == 0 && !inFocus && !editing && !archivedTab) {
+            if (section == 0 && !inFocus && !editing && !onPage && !archivedTab) {
                 FloatingActionButton(
                     onClick = { taskEditorId = "" },
                     modifier = Modifier.semantics { contentDescription = "Tambah tugas" },
                 ) { TazerIcon(TazerGlyph.Add) }
+            }
+            if (section == 1 && !inFocus && !editing && !onPage) {
+                ScheduleAddButton(openEvents = { openEvents(null) }, openFixed = { page = "fixed" })
             }
         },
         snackbarHost = { SnackbarHost(snackbar) },
@@ -241,10 +257,15 @@ private fun WorkspaceScreen(
             Column(Modifier.widthIn(max = 720.dp).fillMaxSize()) {
                 if (focusTarget != null) {
                     if (focusedSession != null && focusedTask != null) {
-                        FocusScreen(focusedSession, focusedTask, focusTarget, zone, state, model,
-                            { permissionDialog = true }, { deferDialog = true })
+                        FocusScreen(focusedSession, focusedTask, focusTarget, zone, state, model) { deferDialog = true }
                     } else {
                         Text("Memuat sesi…", modifier = Modifier.padding(20.dp))
+                    }
+                } else if (onPage) {
+                    if (page == "events") {
+                        EventsPage(workspace, state, zone, model, pageEventId) { pageEventId = it }
+                    } else {
+                        FixedSchedulesPage(workspace, state, zone, model)
                     }
                 } else if (editing) {
                     TaskEditor(editedTask, zone, state.subscription?.tier, state.busy, model, closeEditor)
@@ -254,10 +275,10 @@ private fun WorkspaceScreen(
                     }
                     1 -> TimelineScreen(
                         workspace, state, zone, viewDay?.let(java.time.LocalDate::parse) ?: localDate(state.now, zone),
-                        { viewDay = it.toString() }, model::openFocus, { deferDialog = true }, { permissionDialog = true },
+                        { viewDay = it.toString() }, model::openFocus, { deferDialog = true },
                         model.focus.focusSettings().preset,
                     )
-                    2 -> sectionState.SaveableStateProvider("calendar") { CalendarScreen(workspace, state, zone, model) }
+                    2 -> sectionState.SaveableStateProvider("calendar") { CalendarScreen(workspace, state, zone, model, openEvents) }
                     3 -> SettingsScreen(workspace, state, model, theme, setTheme, permissionRefresh, requestNotifications) {
                         permissionDialog = true
                     }
@@ -316,11 +337,15 @@ internal fun TimerIconButton(label: String, onClick: () -> Unit) {
     ) { TazerIcon(TazerGlyph.Timer, label) }
 }
 
-internal enum class TazerGlyph { Tasks, Timeline, Calendar, Settings, Statistics, Timer, Previous, Next, Down, Edit, Delete, Check, Add, Camera, Image, Search, Share }
+internal enum class TazerGlyph { Tasks, Timeline, Calendar, Settings, Statistics, Timer, Previous, Next, Down, Edit, Delete, Check, Add, Camera, Image, Search, Share, CsvFile, ExcelFile }
 
 @Composable
 internal fun TazerIcon(glyph: TazerGlyph, description: String? = null) {
     val ink = LocalContentColor.current
+    // Spreadsheet green that keeps 3:1 against white (Light) and black (Dark) pages.
+    val dark = LocalTazerDark.current
+    val excel = if (dark) Color(0xFF5CC88A) else Color(0xFF1D6B40)
+    val excelMark = if (dark) Color(0xFF0B2A18) else Color.White
     val accessibility = if (description == null) Modifier else Modifier.semantics { contentDescription = description }
     Canvas(Modifier.size(22.dp).then(accessibility)) {
         fun point(x: Float, y: Float) = Offset(size.width * x, size.height * y)
@@ -400,6 +425,32 @@ internal fun TazerIcon(glyph: TazerGlyph, description: String? = null) {
                 line(.42f, .19f, .58f, .19f)
                 line(.58f, .19f, .64f, .30f)
                 drawCircle(ink, size.width * .14f, point(.5f, .56f), style = Stroke(1.8.dp.toPx()))
+            }
+            TazerGlyph.CsvFile -> {
+                val w = size.width
+                val h = size.height
+                drawPath(Path().apply {
+                    moveTo(w * .20f, h * .07f); lineTo(w * .62f, h * .07f); lineTo(w * .82f, h * .27f)
+                    lineTo(w * .82f, h * .93f); lineTo(w * .20f, h * .93f); close()
+                }, ink, style = Stroke(1.6.dp.toPx(), join = StrokeJoin.Round))
+                line(.62f, .07f, .62f, .27f)
+                line(.62f, .27f, .82f, .27f)
+                // Comma-separated rows: two values per line split by a comma mark.
+                listOf(.47f, .63f, .79f).forEach { y ->
+                    line(.31f, y, .44f, y)
+                    line(.51f, y - .02f, .49f, y + .05f)
+                    line(.57f, y, .71f, y)
+                }
+            }
+            TazerGlyph.ExcelFile -> {
+                val stroke = Stroke(1.6.dp.toPx())
+                drawRoundRect(excel, point(.34f, .12f), Size(size.width * .56f, size.height * .76f), CornerRadius(2.dp.toPx()), style = stroke)
+                line(.62f, .12f, .62f, .88f)
+                line(.34f, .37f, .90f, .37f)
+                line(.34f, .62f, .90f, .62f)
+                drawRoundRect(excel, point(.06f, .24f), Size(size.width * .46f, size.height * .52f), CornerRadius(2.5.dp.toPx()))
+                drawLine(excelMark, point(.17f, .35f), point(.41f, .65f), strokeWidth = 1.9.dp.toPx(), cap = StrokeCap.Round)
+                drawLine(excelMark, point(.41f, .35f), point(.17f, .65f), strokeWidth = 1.9.dp.toPx(), cap = StrokeCap.Round)
             }
             TazerGlyph.Search -> {
                 drawCircle(ink, size.width * .25f, point(.43f, .43f), style = Stroke(1.8.dp.toPx()))

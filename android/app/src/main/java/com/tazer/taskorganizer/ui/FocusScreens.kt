@@ -102,7 +102,6 @@ internal fun FocusScreen(
     zone: ZoneId,
     state: TazerState,
     model: TazerViewModel,
-    permissions: () -> Unit,
     defer: () -> Unit,
 ) {
     val clock = focusClock(model.focus, session)
@@ -206,7 +205,6 @@ internal fun FocusScreen(
             HorizontalDivider(Modifier.padding(vertical = 4.dp))
         }
         OutlinedButton(onClick = defer, enabled = !state.busy) { Text("Saya lagi sibuk") }
-        OutlinedButton(onClick = permissions) { Text("Pengaturan fokus") }
     }
     if (decision == "decision" && session.state == WorkSessionState.OVERTIME) {
         AlertDialog(

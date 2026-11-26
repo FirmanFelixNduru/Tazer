@@ -12,7 +12,7 @@ import java.util.Locale
 
 data class ExportEvent(
     val id: String, val title: String, val startEpochDay: Long, val endEpochDay: Long,
-    val startMinute: Int?, val description: String,
+    val startMinute: Int?, val description: String, val endMinute: Int? = null,
 )
 
 data class ExportBlock(val id: String, val label: String, val dayOfWeek: Int, val startMinute: Int, val endMinute: Int)
@@ -70,8 +70,8 @@ object IcsWriter {
             val time = if (minute == null) {
                 // DTEND of an all-day event is exclusive.
                 arrayOf("DTSTART;VALUE=DATE:${date.format(start)}", "DTEND;VALUE=DATE:${date.format(end.plusDays(1))}")
-            } else if (end > start) {
-                arrayOf("DTSTART:${local.format(at(start, minute))}", "DTEND:${local.format(at(end, minute))}")
+            } else if (event.endMinute != null || end > start) {
+                arrayOf("DTSTART:${local.format(at(start, minute))}", "DTEND:${local.format(at(end, event.endMinute ?: minute))}")
             } else {
                 arrayOf("DTSTART:${local.format(at(start, minute))}")
             }

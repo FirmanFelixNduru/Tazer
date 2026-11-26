@@ -138,4 +138,8 @@ data class CalendarEvent(
     val endEpochDay: Long,
     val startMinute: Int?,
     val description: String,
+    /** Local end time on [endEpochDay]; null for all-day or open-ended events. */
+    val endMinute: Int? = null,
+    /** Palette slot of the calendar marker; null uses the default event colour. */
+    val colorIndex: Int? = null,
 )
