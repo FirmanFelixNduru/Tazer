@@ -20,7 +20,10 @@ Sejak 26 November 2026 seluruh peran dikerjakan Tim Orkestra Claude. Orchestrato
 | Android Core & Scheduler Dev | `claude-sonnet-5-5` high |
 | Android UI/UX (Compose) Dev | `claude-haiku-5-5` medium untuk komponen ringan; `claude-sonnet-5-5` medium untuk layar kompleks dan polish `impeccable` |
 | QA & Security Reviewer | `claude-sonnet-5-5` high |
+| Visual & UX Reference Analyst | `claude-sonnet-5-5` high; `claude-opus-5-5` high hanya untuk audit konflik design system atau alur interaksi kompleks |
 | Eskalasi | `claude-opus-5-5` high, `xhigh` hanya saat buntu total; pemicu sesuai aturan 5 |
+
+Visual & UX Reference Analyst menganalisis foto, screenshot, atau video referensi UI dan alur kerja dari owner. Analyst menyimpan aset dengan nama deskriptif di `docs/references/`, memeriksa ukuran, lisensi, dan watermark sebelum aset ikut Git, lalu menyusun spesifikasi token visual: palet Light/Dark, shadow dan elevasi, tipografi, hierarki, kontras WCAG, serta pemetaan komponen. Saran konkret diteruskan kepada Android UI/UX Dev, Android Core Dev, dan System Architect sesuai `impeccable` dan `ponytail`. Kode UI baru diubah setelah owner menyetujui mockup.
 
 AI di dalam aplikasi tetap memakai Gemini Free Tier melalui Cloudflare Workers dan Supabase Free. Model Claude hanya dipakai untuk pengembangan.
 
@@ -32,7 +35,8 @@ Tazer/
 ├── docs/
 │   ├── DATA_AND_API_CONTRACT.md
 │   ├── SCHEDULER_SPEC.md
-│   └── WAVE_PLAN.md
+│   ├── WAVE_PLAN.md
+│   └── references/   # aset referensi UI dan spesifikasi token visual
 ├── graphify-out/
 │   ├── graph.json
 │   └── GRAPH_REPORT.md
