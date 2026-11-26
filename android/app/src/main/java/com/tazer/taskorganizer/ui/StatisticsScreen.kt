@@ -183,6 +183,7 @@ internal fun StatisticsScreen(workspace: Workspace, state: TazerState, zone: Zon
                 Modifier.fillMaxWidth().padding(vertical = 8.dp).semantics(mergeDescendants = true) {},
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
+                CourseDot(course.course, Modifier.align(Alignment.CenterVertically))
                 Text(course.course, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
                 Text(duration(course.workMs, integerFormat), style = MaterialTheme.typography.bodyMedium,
                     textAlign = TextAlign.End, modifier = Modifier.weight(0.65f))

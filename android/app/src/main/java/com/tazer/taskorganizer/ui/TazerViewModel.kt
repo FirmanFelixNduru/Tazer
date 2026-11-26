@@ -5,7 +5,18 @@ import android.content.Intent
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.tazer.taskorganizer.BuildConfig
 import com.tazer.taskorganizer.data.AnalysisSource
+import com.tazer.taskorganizer.data.BackupPreview
+import com.tazer.taskorganizer.data.BackupRepository
+import com.tazer.taskorganizer.data.CourseColorStore
+import com.tazer.taskorganizer.data.TaskPackage
+import com.tazer.taskorganizer.data.TaskPackages
+import com.tazer.taskorganizer.data.TazerBackup
+import com.tazer.taskorganizer.domain.ExportBlock
+import com.tazer.taskorganizer.domain.ExportEvent
+import com.tazer.taskorganizer.domain.ExportSession
+import com.tazer.taskorganizer.domain.IcsWriter
 import com.tazer.taskorganizer.data.CalendarEvent
 import com.tazer.taskorganizer.data.CalendarRepository
 import com.tazer.taskorganizer.data.CloudSync
@@ -83,6 +94,10 @@ data class TazerState(
     val message: String? = null,
     val cloudStatus: String? = null,
     val cloudSyncing: Boolean = false,
+    /** Course colour overrides for the signed-in account; missing courses use the automatic palette. */
+    val courseColors: Map<String, Int> = emptyMap(),
+    /** A shared task package waiting for the user to review, from a link or pasted code. */
+    val pendingPackage: TaskPackage? = null,
 )
 
 data class FocusTarget(val id: String, val requestExtension: Boolean = false)
@@ -123,6 +138,8 @@ class TazerViewModel internal constructor(
     private val subtaskRepository: SubtaskRepository? = null,
     private val cloud: CloudSync? = null,
     private val network: Flow<Boolean> = flowOf(true),
+    private val colors: CourseColorStore? = null,
+    private val backups: BackupRepository? = null,
 ) : ViewModel() {
     private val _state = MutableStateFlow(TazerState())
     val state = _state.asStateFlow()
@@ -563,6 +580,82 @@ class TazerViewModel internal constructor(
         return suggestion(result.difficultyScore, result.estimatedMinutes, AnalysisSource.AI, result.subtasks)
     }
 
+    fun chooseCourseColor(course: String, index: Int?) {
+        val uid = _state.value.uid ?: return
+        val store = colors ?: return
+        val next = store.choose(uid, course, index)
+        _state.update { if (it.uid == uid) it.copy(courseColors = next) else it }
+    }
+
+    /** Opens the package review for a link or code, or returns why the text cannot be imported. */
+    fun reviewPackage(text: String): String? = try {
+        _state.update { it.copy(pendingPackage = TaskPackages.decode(text)) }
+        null
+    } catch (failure: IllegalArgumentException) {
+        failure.message?.takeIf { it.endsWith('.') } ?: "Kode paket tugas tidak valid."
+    }
+
+    fun dismissPackage() = _state.update { it.copy(pendingPackage = null) }
+
+    /** Saves the reviewed package as a new task with all of its subtasks in one transaction. */
+    fun importPackage(pack: TaskPackage, onSaved: () -> Unit) {
+        val drafts = if (subtasksAvailable) pack.subtasks.map { SubtaskDraft(null, it, false) } else emptyList()
+        saveTask(null, TaskInput(
+            pack.title, pack.course, pack.description, pack.deadlineAt, pack.difficultyScore, pack.estimatedMinutes,
+            AnalysisSource.OFFLINE, checklist = ChecklistChange(emptyList(), drafts).takeIf { drafts.isNotEmpty() },
+        )) {
+            _state.update { it.copy(pendingPackage = null) }
+            showMessage("Tugas “${pack.title}” ditambahkan dari paket.")
+            onSaved()
+        }
+    }
+
+    /** RFC 5545 calendar of upcoming focus sessions, weekly fixed blocks, and calendar events. */
+    fun exportIcs(): String {
+        val workspace = requireNotNull(_state.value.data)
+        val now = System.currentTimeMillis()
+        val titles = workspace.tasks.associateBy { it.id }
+        return IcsWriter.write(
+            ZoneId.of(workspace.profile.zoneId), now,
+            workspace.events.map { ExportEvent(it.id, it.title, it.startEpochDay, it.endEpochDay, it.startMinute, it.description) },
+            workspace.fixed.map { ExportBlock(it.id, it.label, it.dayOfWeek, it.startMinute, it.endMinute) },
+            workspace.sessions.filter { it.state == WorkSessionState.PENDING && it.plannedEndAt > now }.mapNotNull { session ->
+                titles[session.taskId]?.let { ExportSession(session.id, it.title, it.course, session.plannedStartAt, session.plannedEndAt) }
+            },
+        )
+    }
+
+    suspend fun exportBackup(): String {
+        val uid = requireNotNull(_state.value.uid)
+        val data = requireNotNull(backups).export(uid, _state.value.courseColors)
+        return TazerBackup.encode(data, System.currentTimeMillis(), BuildConfig.VERSION_NAME)
+    }
+
+    suspend fun previewBackup(text: String): BackupPreview {
+        val uid = requireNotNull(_state.value.uid)
+        val data = withContext(Dispatchers.Default) { TazerBackup.decode(text) }
+        return requireNotNull(backups).preview(uid, data)
+    }
+
+    fun restoreBackup(preview: BackupPreview, close: () -> Unit) = runAction {
+        val uid = _state.value.uid
+        if (uid != preview.ownerUid) {
+            close()
+            showMessage("Akun telah berubah. Pilih kembali file backup.")
+            return@runAction
+        }
+        val counts = requireNotNull(backups).restore(uid, preview)
+        val store = colors
+        if (store != null) {
+            val merged = preview.data.courseColors + store.read(uid)
+            store.save(uid, merged)
+            _state.update { if (it.uid == uid) it.copy(courseColors = merged) else it }
+        }
+        close()
+        showMessage("Backup dipulihkan: ${counts.totalNew} item baru, ${counts.duplicates} duplikat dilewati.")
+        rebuild(uid)
+    }
+
     private fun change(onSaved: () -> Unit = {}, operation: suspend (String) -> Boolean) = runAction {
         val uid = _state.value.uid ?: return@runAction
         if (!operation(uid)) {
@@ -586,7 +679,8 @@ class TazerViewModel internal constructor(
         }
         val cloudEnabled = cloud != null && CloudSync.uuid(uid)
         _state.update { it.copy(uid = uid, demo = demo, subscription = subscription, data = null, risks = emptyList(),
-            recovery = false, cloudSyncing = false, cloudStatus = if (cloudEnabled) "Menunggu koneksi." else null) }
+            recovery = false, cloudSyncing = false, cloudStatus = if (cloudEnabled) "Menunggu koneksi." else null,
+            courseColors = colors?.read(uid).orEmpty()) }
         focus.activate(uid)
         rebuild(uid)
         ownerJob = viewModelScope.launch {

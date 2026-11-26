@@ -81,6 +81,7 @@ import java.time.format.FormatStyle
 import java.time.format.TextStyle
 import kotlin.math.abs
 import kotlinx.coroutines.coroutineScope
+import com.tazer.taskorganizer.domain.TaskSearch
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 
@@ -296,7 +297,7 @@ private fun TimelineEntry(row: TimelineRow, start: Long, end: Long, now: Long, z
                     }
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         ScheduleTag(row.kind)
-                        row.course?.takeIf { it.isNotBlank() }?.let { ScheduleTag(it) }
+                        row.course?.takeIf { it.isNotBlank() }?.let { CourseChip(it) }
                         ScheduleTag("${((row.end - row.start) / 60_000).coerceAtLeast(1)} menit")
                     }
                     row.description?.takeIf { it.isNotBlank() }?.let {
@@ -370,6 +371,11 @@ internal fun SettingsScreen(
             }
         }
         item {
+            HorizontalDivider(modifier = Modifier.padding(top = 18.dp, bottom = 14.dp))
+            CourseColorSetting(remember(workspace.tasks) { TaskSearch.courses(workspace.tasks.map { it.course }) },
+                model::chooseCourseColor)
+            HorizontalDivider(modifier = Modifier.padding(vertical = 14.dp))
+            DataBackupSetting(state.busy, model)
             AccountSettings(state, model, Modifier.padding(top = 24.dp, bottom = 16.dp))
         }
     }

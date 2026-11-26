@@ -1,5 +1,15 @@
 package com.tazer.taskorganizer.ui
 
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Column
+import androidx.compose.material3.MaterialTheme
+import com.tazer.taskorganizer.data.CourseColorStore
+import com.tazer.taskorganizer.data.SubtaskDraft
+import com.tazer.taskorganizer.data.TazerBackup
+import com.tazer.taskorganizer.domain.CourseColors
+import com.tazer.taskorganizer.domain.IcsParser
+import org.junit.Assert.assertFalse
 import android.Manifest
 import android.app.Notification
 import android.app.NotificationManager
@@ -622,6 +632,251 @@ class ReleaseUiTest {
         }
     }
 
+    @Test
+    fun searchAndFiltersNarrowBothTabsAndResetClearly() = runBlocking {
+        val tasks = TaskRepository(TazerDatabase.getInstance(context))
+        val tag = UUID.randomUUID().toString().take(6)
+        val now = System.currentTimeMillis()
+        val ids = mutableListOf<String>()
+        try {
+            launch()
+            ids += tasks.createTask(UID, "Cari $tag laporan", "Kimia $tag", "Titrasi asam", now + 86_400_000, 4, 60, now).id
+            ids += tasks.createTask(UID, "Cari $tag esai", "Sastra $tag", "Puisi lama", now + 86_400_000, 2, 30, now).id
+            ids += tasks.createTask(UID, "Cari $tag kuis", "Kimia $tag", "Stoikiometri", now + 86_400_000, 1, 20, now).id
+                .also { assertTrue(tasks.completeTask(UID, it, now)) }
+            waitFor("Search field missing") { find { it.contentDescription?.toString() == "Cari tugas" } != null }
+            setText("Cari tugas", "titrasi $tag")
+            waitFor("Search did not narrow the active tab") {
+                findText("Cari $tag laporan") != null && findText("Cari $tag esai") == null
+            }
+            setText("Cari tugas", tag)
+            waitFor("Course chip missing") { clickVisible("Sastra $tag") }
+            waitFor("Course filter did not apply") { findText("Cari $tag esai") != null && findText("Cari $tag laporan") == null }
+            waitFor("Difficulty chip missing") { clickVisible("Kesulitan 5") }
+            waitFor("Informative empty state missing") { findText("Tidak ada tugas aktif yang cocok") != null }
+            waitFor("Reset unavailable") { clickVisible("Reset filter") }
+            waitFor("Reset did not restore the list") { findText("Cari $tag laporan") != null }
+            waitFor("Done tab unavailable") { clickText("Selesai") }
+            setText("Cari tugas", "stoikiometri $tag")
+            waitFor("Search did not work on the done tab") { findText("Cari $tag kuis") != null }
+            setText("Cari tugas", "titrasi $tag")
+            waitFor("Done tab empty state missing") { findText("Tidak ada tugas selesai yang cocok") != null }
+        } finally {
+            ids.forEach { tasks.deleteTask(UID, it) }
+            finish()
+        }
+    }
+
+    @Test
+    fun courseChipsKeepTheirPaletteColourInLightAndDarkAndHonourOverrides() = runBlocking {
+        val tasks = TaskRepository(TazerDatabase.getInstance(context))
+        val preference = ThemePreference(context)
+        val original = preference.read()
+        val store = CourseColorStore(context)
+        val originalColors = store.read(UID)
+        val course = "Warna " + UUID.randomUUID().toString().take(6)
+        val now = System.currentTimeMillis()
+        var taskId: String? = null
+        try {
+            taskId = tasks.createTask(UID, "Uji warna $course", course, "", now + 86_400_000, 3, 30, now).id
+            val override = (CourseColors.automaticIndex(course) + 3) % CourseColors.palette.size
+            for ((mode, chosen) in listOf(TazerThemeMode.LIGHT to null, TazerThemeMode.DARK to null,
+                TazerThemeMode.LIGHT to override, TazerThemeMode.DARK to override)) {
+                finish()
+                preference.save(mode)
+                store.save(UID, if (chosen == null) emptyMap() else mapOf(CourseColors.key(course) to chosen))
+                launch()
+                val swatch = CourseColors.palette[chosen ?: CourseColors.automaticIndex(course)]
+                val expected = swatch.tone(mode == TazerThemeMode.DARK).container.toInt()
+                waitFor("Course chip for $course did not show its colour in $mode") {
+                    // The task card's chip sits below the white filter chip that carries the same label.
+                    val chip = nodes { it.text?.toString() == course }.maxByOrNull { bounds(it).top } ?: return@waitFor scrollUp()
+                    val rect = bounds(chip)
+                    val shot = automation.takeScreenshot() ?: return@waitFor false
+                    try {
+                        // The label's start padding sits on the chip container, between the dot and the text.
+                    sameColor(expected, shot.getPixel(rect.left + 2, rect.centerY()))
+                    } finally {
+                        shot.recycle()
+                    }
+                }
+            }
+        } finally {
+            taskId?.let { tasks.deleteTask(UID, it) }
+            store.save(UID, originalColors)
+            finish()
+            preference.save(original)
+        }
+    }
+
+    @Test
+    fun icsAndBackupExportThroughSafAndRestoreMergesWithPreview() = runBlocking {
+        val database = TazerDatabase.getInstance(context)
+        val tasks = TaskRepository(database)
+        val tag = UUID.randomUUID().toString().take(6)
+        val now = System.currentTimeMillis()
+        val ics = File(context.cacheDir, "export-$tag.ics")
+        val backup = File(context.cacheDir, "backup-$tag.json")
+        val created = mutableListOf<String>()
+        fun monitor(action: String, type: String, file: File) = instrumentation.addMonitor(
+            IntentFilter(action).apply { addCategory(Intent.CATEGORY_OPENABLE); addDataType(type) },
+            Instrumentation.ActivityResult(Activity.RESULT_OK, Intent().setData(Uri.fromFile(file))), true,
+        )
+        var monitors = emptyList<Instrumentation.ActivityMonitor>()
+        try {
+            launch()
+            created += tasks.createTask(UID, "Ekspor $tag", "Backup $tag", "", now + 86_400_000, 2, 30, now).id
+            monitors = listOf(
+                monitor(Intent.ACTION_CREATE_DOCUMENT, "text/calendar", ics),
+                monitor(Intent.ACTION_CREATE_DOCUMENT, "application/json", backup),
+                monitor(Intent.ACTION_OPEN_DOCUMENT, "*/*", backup),
+            )
+            waitFor("Settings unavailable") { clickText("Pengaturan") }
+            waitFor("ICS export unavailable") { clickVisible("Ekspor .ics") }
+            waitFor("ICS file was not written") { ics.length() > 0 }
+            val calendar = ics.readText()
+            assertTrue(calendar.startsWith("BEGIN:VCALENDAR\r\n") && calendar.trimEnd().endsWith("END:VCALENDAR"))
+            assertEquals(0, IcsParser.parse(ics.inputStream(), ZoneId.systemDefault()).invalid)
+
+            waitFor("Backup export unavailable") { clickVisible("Ekspor Backup JSON") }
+            waitFor("Backup file was not written") { backup.length() > 0 && runCatching { TazerBackup.decode(backup.readText()) }.isSuccess }
+            val exported = backup.readText()
+            assertFalse("backup leaks the account id", exported.contains(UID))
+            assertTrue(TazerBackup.decode(exported).tasks.any { it.title == "Ekspor $tag" })
+
+            // A friend's backup: one new task plus the rows this account already has.
+            val data = TazerBackup.decode(exported)
+            val extra = data.tasks.first { it.title == "Ekspor $tag" }.copy(id = UUID.randomUUID().toString(), title = "Pulih $tag")
+            backup.writeText(TazerBackup.encode(data.copy(tasks = data.tasks + extra), now, "test"))
+            waitFor("Backup import unavailable") { clickVisible("Impor Backup JSON") }
+            waitFor("Backup preview missing") { findText("Pratinjau backup") != null && findText("1 tugas baru") != null }
+            waitFor("Restore unavailable") { clickText("Pulihkan") }
+            waitFor("Restored task missing") {
+                runBlocking { tasks.observeTasks(UID).first().any { it.title == "Pulih $tag" } }
+            }
+            created += tasks.observeTasks(UID).first().filter { it.title == "Pulih $tag" }.map { it.id }
+            waitFor("Backup import unavailable for duplicate check") { clickVisible("Impor Backup JSON") }
+            waitFor("Duplicate preview missing") { findText("0 tugas baru") != null }
+            waitFor("Close unavailable") { clickText("Tutup") }
+            assertEquals(1, tasks.observeTasks(UID).first().count { it.title == "Pulih $tag" })
+        } finally {
+            monitors.forEach(instrumentation::removeMonitor)
+            created.forEach { tasks.deleteTask(UID, it) }
+            ics.delete()
+            backup.delete()
+            finish()
+        }
+    }
+
+    @Test
+    fun sharedTaskPackageImportsWithAllSubtasksAfterPreview() = runBlocking {
+        val database = TazerDatabase.getInstance(context)
+        val tasks = TaskRepository(database)
+        val subtasks = SubtaskRepository(database)
+        val tag = UUID.randomUUID().toString().take(6)
+        val now = System.currentTimeMillis()
+        var shared: String? = null
+        val chooser = object : Instrumentation.ActivityMonitor() {
+            override fun onStartActivity(intent: Intent): Instrumentation.ActivityResult? {
+                if (intent.action != Intent.ACTION_CHOOSER) return null
+                @Suppress("DEPRECATION")
+                shared = (intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT))?.getStringExtra(Intent.EXTRA_TEXT)
+                return Instrumentation.ActivityResult(Activity.RESULT_CANCELED, null)
+            }
+        }
+        var sourceId: String? = null
+        try {
+            launch()
+            sourceId = tasks.createTask(UID, "Paket $tag", "Kelompok $tag", "Bagi tugas presentasi", now + 3 * 86_400_000L, 4, 90, now).id
+            subtasks.replace(UID, requireNotNull(sourceId), listOf("Riset materi", "Buat slide", "Latihan presentasi")
+                .map { SubtaskDraft(null, it, false) })
+            instrumentation.addMonitor(chooser)
+            waitFor("Share action missing") { clickVisible("Bagikan tugas Paket $tag") }
+            waitFor("Share sheet was not requested") { shared != null }
+            val text = requireNotNull(shared)
+            assertTrue(text.contains("Mata kuliah: Kelompok $tag") && text.contains("3. Latihan presentasi"))
+            assertFalse(text.contains(UID))
+            tasks.deleteTask(UID, requireNotNull(sourceId))
+            sourceId = null
+
+            val link = Regex("tazer://import-task\\?d=[A-Za-z0-9_-]+").find(text)!!.value
+            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(link)).setPackage(context.packageName)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+            waitFor("Package preview missing") { findText("Pratinjau paket tugas") != null && findText("Paket $tag") != null }
+            for (expected in listOf("Kelompok $tag", "Kesulitan 4/5 · Estimasi 90 menit", "Subtask (3)", "2. Buat slide")) {
+                waitFor("Preview lacks $expected") { findText(expected) != null }
+            }
+            assertTrue("Nothing may save before confirmation", tasks.observeTasks(UID).first().none { it.title == "Paket $tag" })
+            waitFor("Save unavailable") { clickText("Simpan tugas") }
+            waitFor("Imported task missing") { runBlocking { tasks.observeTasks(UID).first().any { it.title == "Paket $tag" } } }
+            val imported = tasks.observeTasks(UID).first().first { it.title == "Paket $tag" }
+            sourceId = imported.id
+            assertEquals(Triple("Kelompok $tag", 4, 90), Triple(imported.course, imported.difficultyScore, imported.initialEstimatedMinutes))
+            assertEquals(listOf("Riset materi", "Buat slide", "Latihan presentasi"),
+                subtasks.observe(UID).first().filter { it.taskId == imported.id }.sortedBy { it.position }.map { it.title })
+
+            waitFor("Add task unavailable") { clickText("Tambah tugas") }
+            waitFor("Package import button missing") { clickVisible("Impor Paket Tugas") }
+            waitFor("Paste dialog missing") { findText("Teks atau kode paket") != null }
+            setText("Teks atau kode paket", "bukan kode")
+            waitFor("Preview button unavailable") { clickText("Pratinjau") }
+            waitFor("Invalid code message missing") { findText("Kode paket tugas tidak ditemukan.") != null }
+        } finally {
+            instrumentation.removeMonitor(chooser)
+            sourceId?.let { tasks.deleteTask(UID, it) }
+            finish()
+        }
+    }
+
+    @Test
+    fun releaseNotesRenderWithoutMarkdownSymbols() {
+        try {
+            launch()
+            val markdown = "## Tazer **1.7.0**\n\n- **Pencarian.** Cari tugas di dua tab.\n* Warna per mata kuliah\n\nPasang APK di atas v1.6.0."
+            instrumentation.runOnMainSync {
+                (activity as ComponentActivity).setContent { MaterialTheme { Column { ReleaseNotesView(markdown) } } }
+            }
+            waitFor("Release notes did not render") { findText("Tazer 1.7.0") != null }
+            assertTrue(nodes { it.text?.toString()?.contains("Pencarian. Cari tugas di dua tab.") == true }.isNotEmpty())
+            assertTrue(findText("Warna per mata kuliah") != null)
+            assertTrue(nodes { node -> listOf("##", "**", "- ", "* ").any { node.text?.toString()?.startsWith(it) == true } ||
+                node.text?.toString()?.contains("**") == true }.isEmpty())
+        } finally {
+            finish()
+        }
+    }
+
+    private fun setText(label: String, value: String) {
+        waitFor("Text field $label missing") {
+            val field = find { (it.contentDescription?.toString() == label || hasText(it, label)) && it.isEditable }
+                ?: generateSequence(find { it.text?.toString() == label || it.contentDescription?.toString() == label }) { it.parent }
+                    .firstOrNull { it.isEditable }
+            field?.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, android.os.Bundle().apply {
+                putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, value)
+            }) == true
+        }
+    }
+
+    /** A slow drag that scrolls about a quarter screen without a fling, so mid-page targets are not skipped. */
+    private fun gentleScroll(upward: Boolean = false): Boolean {
+        val display = context.resources.displayMetrics
+        val x = display.widthPixels / 2f
+        val down = SystemClock.uptimeMillis()
+        for (i in 0..20) {
+            val action = when (i) { 0 -> MotionEvent.ACTION_DOWN; 20 -> MotionEvent.ACTION_UP; else -> MotionEvent.ACTION_MOVE }
+            val travel = .25f * minOf(i, 18) / 18
+            val y = display.heightPixels * if (upward) .45f + travel else .70f - travel
+            val event = MotionEvent.obtain(down, down + i * 40L, action, x, y, 0)
+            try { automation.injectInputEvent(event, true) } finally { event.recycle() }
+        }
+        SystemClock.sleep(300)
+        return false
+    }
+
+    private fun sameColor(expected: Int, actual: Int) = listOf(16, 8, 0).all { shift ->
+        kotlin.math.abs((expected shr shift and 0xFF) - (actual shr shift and 0xFF)) <= 6
+    }
+
     private fun switchNode(label: String) = nodes {
         it.isCheckable && (it.text?.toString()?.contains(label) == true || hasText(it, label))
     }.firstOrNull()
@@ -630,8 +885,8 @@ class ReleaseUiTest {
         return nodes { it.text?.toString() == label }.any { node -> generateSequence(node) { it.parent }.any { it.isSelected } }
     }
     /** Scrolls until the target is on screen, then clicks it through accessibility, independent of position. */
-    private fun clickVisible(text: String): Boolean {
-        var node = find { it.text?.toString() == text || it.contentDescription?.toString() == text } ?: return scrollUp()
+    private fun clickVisible(text: String, upward: Boolean = false): Boolean {
+        var node = find { it.text?.toString() == text || it.contentDescription?.toString() == text } ?: return gentleScroll(upward)
         while (!node.isClickable) node = node.parent ?: return false
         return node.isEnabled && node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
     }
@@ -644,7 +899,8 @@ class ReleaseUiTest {
             if (condition()) return
             SystemClock.sleep(100)
         }
-        throw AssertionError(message)
+        val visible = runCatching { nodes { !it.text.isNullOrBlank() }.map { it.text.toString() }.take(30) }.getOrDefault(emptyList())
+        throw AssertionError("$message | visible: $visible")
     }
 
     private fun nodes(predicate: (AccessibilityNodeInfo) -> Boolean): List<AccessibilityNodeInfo> {

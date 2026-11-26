@@ -33,7 +33,7 @@ internal fun parseReleaseUpdate(release: JSONObject, installed: String): Release
     val digest = (asset?.opt("digest") as? String)?.takeIf(sha256Digest::matches)
     return ReleaseUpdate(
         version,
-        (release.opt("body") as? String).orEmpty().trim().take(900),
+        (release.opt("body") as? String).orEmpty().trim().take(2000),
         asset?.optString("browser_download_url"),
         (asset?.opt("size") as? Number)?.toLong()?.takeIf { it > 0 },
         digest?.removePrefix("sha256:"),

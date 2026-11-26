@@ -1,5 +1,7 @@
 package com.tazer.taskorganizer.ui
 
+import android.content.ActivityNotFoundException
+import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -50,6 +52,9 @@ import com.tazer.taskorganizer.data.TaskStatus
 import com.tazer.taskorganizer.data.WorkSessionState
 import com.tazer.taskorganizer.domain.Scheduler
 import com.tazer.taskorganizer.domain.SchedulingTask
+import com.tazer.taskorganizer.domain.TaskQuery
+import com.tazer.taskorganizer.domain.TaskSearch
+import com.tazer.taskorganizer.data.TaskPackages
 import com.tazer.taskorganizer.integration.IntegrationException
 import com.tazer.taskorganizer.integration.SubscriptionTier
 import java.time.Instant
@@ -98,10 +103,38 @@ internal fun TasksScreen(
         val byId = active.associateBy { it.id }
         Scheduler.rank(active.map(Task::schedulingTask), state.now).map { byId.getValue(it.id) }
     }
-    val tasks = if (archived) {
+    val tabTasks = if (archived) {
         workspace.tasks.filter { it.status == TaskStatus.DONE }
             .sortedWith(compareByDescending<Task> { it.completedAt }.thenBy { it.id })
     } else ranked
+    var searchText by rememberSaveable { mutableStateOf("") }
+    var courseFilter by rememberSaveable { mutableStateOf<String?>(null) }
+    var difficultyFilter by rememberSaveable { mutableStateOf<Int?>(null) }
+    val query = TaskQuery(searchText, courseFilter, difficultyFilter)
+    val setQuery: (TaskQuery) -> Unit = {
+        searchText = it.text
+        courseFilter = it.course
+        difficultyFilter = it.difficulty
+    }
+    val tasks = tabTasks.filter { TaskSearch.matches(query, it.title, it.course, it.description, it.difficultyScore) }
+    // Course chips follow the text and difficulty filters, so only courses that can still match are offered.
+    val courses = remember(tabTasks, searchText, difficultyFilter, courseFilter) {
+        val facet = query.copy(course = null)
+        TaskSearch.courses(tabTasks.filter { TaskSearch.matches(facet, it.title, it.course, it.description, it.difficultyScore) }
+            .map(Task::course) + listOfNotNull(courseFilter))
+    }
+    val context = LocalContext.current
+    val share: (Task) -> Unit = { task ->
+        val text = TaskPackages.shareText(TaskPackages.from(task, workspace.subtasks.filter { it.taskId == task.id }), zone)
+        val send = Intent(Intent.ACTION_SEND).setType("text/plain")
+            .putExtra(Intent.EXTRA_SUBJECT, "Paket tugas: ${task.title}")
+            .putExtra(Intent.EXTRA_TEXT, text)
+        try {
+            context.startActivity(Intent.createChooser(send, "Bagikan paket tugas"))
+        } catch (_: ActivityNotFoundException) {
+            model.showMessage("Tidak ada aplikasi untuk berbagi.")
+        }
+    }
     val taskSessions = remember(workspace.sessions) { workspace.sessions.groupBy { it.taskId } }
     val taskSubtasks = remember(workspace.subtasks) { workspace.subtasks.groupBy(Subtask::taskId) }
     val risks = remember(state.risks) { state.risks.associateBy { it.taskId } }
@@ -117,19 +150,20 @@ internal fun TasksScreen(
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 88.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        if (tasks.isEmpty()) item {
+        if (tabTasks.isNotEmpty()) item(key = "filters") { TaskFilterBar(query, courses, setQuery) }
+        if (tabTasks.isEmpty()) item {
             Text(
                 if (archived) "Belum ada tugas selesai." else "Belum ada tugas aktif. Ketuk Tambah tugas untuk memulai.",
                 modifier = Modifier.padding(vertical = 24.dp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-        }
+        } else if (tasks.isEmpty()) item(key = "no-match") { FilteredEmpty(archived) { setQuery(TaskQuery()) } }
         items(tasks, key = { it.id }) { task ->
             val sessions = taskSessions[task.id].orEmpty()
             Surface(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surfaceContainerLow, shape = MaterialTheme.shapes.large) {
             Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(task.title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
-                Text(task.course, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                CourseChip(task.course)
                 val subtasks = taskSubtasks[task.id].orEmpty()
                 SubtaskProgress(subtasks.count(Subtask::completed), subtasks.size)
                 if (archived) {
@@ -165,6 +199,8 @@ internal fun TasksScreen(
                         val success = if (LocalTazerDark.current) Color(0xFF84D39A) else Color(0xFF146634)
                         TaskAction(TazerGlyph.Check, "Tandai selesai ${task.title}", success, !state.busy) { model.finishTask(task) }
                     }
+                    TaskAction(TazerGlyph.Share, "Bagikan tugas ${task.title}", MaterialTheme.colorScheme.onSurface,
+                        true) { share(task) }
                     TaskAction(TazerGlyph.Delete, "Hapus tugas ${task.title}", MaterialTheme.colorScheme.error,
                         !state.busy) { deleteId = task.id }
                 }
@@ -334,6 +370,7 @@ internal fun TaskEditor(task: Task?, zone: ZoneId, tier: SubscriptionTier?, busy
                 onMessage = model::showMessage,
             )
             scanNotes?.let { ScanReview(it) }
+            ImportPackageButton(editable, model)
         }
         OutlinedTextField(title, { title = it }, label = { Text("Judul") }, singleLine = true, enabled = editable, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(course, { course = it }, label = { Text("Mata kuliah") }, singleLine = true, enabled = editable, modifier = Modifier.fillMaxWidth())

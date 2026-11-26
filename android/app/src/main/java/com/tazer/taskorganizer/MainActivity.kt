@@ -14,7 +14,9 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
+import com.tazer.taskorganizer.data.BackupRepository
 import com.tazer.taskorganizer.data.CalendarRepository
+import com.tazer.taskorganizer.data.CourseColorStore
 import com.tazer.taskorganizer.data.CloudSync
 import com.tazer.taskorganizer.data.SubtaskRepository
 import com.tazer.taskorganizer.data.TazerDatabase
@@ -50,7 +52,8 @@ class MainActivity : ComponentActivity() {
                 val integration = AndroidIntegration(applicationContext)
                 return TazerViewModel(focus.taskRepository, CalendarRepository(database),
                     integration, focus, BuildConfig.DEBUG, SubtaskRepository(database),
-                    CloudSync(database, integration::syncRpc), networkAvailability(applicationContext)) as T
+                    CloudSync(database, integration::syncRpc), networkAvailability(applicationContext),
+                    CourseColorStore(applicationContext), BackupRepository(database)) as T
             }
         }
         model = ViewModelProvider(this, factory)[TazerViewModel::class.java]
@@ -105,6 +108,12 @@ class MainActivity : ComponentActivity() {
                 model.closeFocus()
                 scheduleRequest = STATISTICS_REQUEST
                 model.restoreSession()
+            }
+            uri?.scheme == "tazer" && uri.host == "import-task" -> {
+                intent.data = null
+                // Shown for review once a workspace is open; nothing is saved without confirmation.
+                model.restoreSession()
+                model.reviewPackage(uri.toString())?.let(model::showMessage)
             }
             uri?.scheme == "tazer" -> {
                 intent.data = null

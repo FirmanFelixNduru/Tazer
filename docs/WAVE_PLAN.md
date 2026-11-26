@@ -63,6 +63,12 @@ Tempel awalan itu sebelum instruksi peran. Lead memakai model yang ditetapkan pa
 2. Uji kompresi dan EXIF di perangkat, prefill form dari Photo Picker tanpa menyimpan sebelum ditinjau, serta pesan non-PRO. Uji Pengaturan Daily Briefing dengan spinner, persistensi, alarm terpasang dan dibatalkan, channel terpisah, deep link Jadwal/Statistik, serta penjadwalan ulang setelah reboot.
 3. Build APK signed 1.6.0 kode 12 dan uji upgrade dari signed 1.5.0 dengan akun dan data. Lakukan smoke test Light dan Dark, lint, secret scan histori dan APK, lalu publikasikan rilis dan cek Cek Update dari 1.5.0.
 
+## Gate rilis 1.7.0
+
+1. Uji pencarian dan filter di dua tab, determinisme dan kontras warna mata kuliah, generator `.ics` beserta round-trip ke parser, backup JSON tanpa secret dengan deduplikasi, codec paket tugas, dan formatter catatan rilis di JVM.
+2. Uji di emulator API 37: alur search/filter, warna chip pada Light dan Dark serta warna pilihan, ekspor `.ics` dan backup lewat SAF, restore dengan pratinjau, paket tugas melalui Share Sheet dan tautan, serta catatan rilis yang bersih. Lakukan juga upgrade signed dari 1.6.0.
+3. Build APK signed 1.7.0 kode 13. Jalankan lint, secret scan histori dan APK, smoke test Light dan Dark, lalu publikasikan rilis dan cek `releases/latest`.
+
 ## Template handoff
 
 1. **Wave [N] — Langkah [X] dari [Y] (~[Z] menit).** [Aksi atau hasil inti, model dan effort aktual.]

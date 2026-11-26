@@ -63,6 +63,29 @@ Supabase Free menyediakan Auth dan PostgreSQL. Android memakai email/password de
 3. Pola mingguan tak berbatas yang dapat direpresentasikan oleh hari dan menit dalam satu pekan masuk Jadwal Tetap dan berlaku setelah diimpor. Pola dengan `COUNT` atau `UNTIL` diperluas menjadi acara Kalender jika masih dalam batas 512 kemunculan. Kalender menyimpan lokasi dan deskripsi di catatan acara. Jadwal Tetap menyimpan judul dan panjang blok. Pratinjau memisahkan kedua tujuan dan memperlihatkan acara yang dilewati, termasuk aturan pengecualian dan zona yang memerlukan definisi khusus atau punya offset relatif berubah.
 4. Identitas impor diturunkan dari pemilik, UID dan kemunculan. Impor ulang melewati baris yang sudah ada dan mempertahankan edit lokal. Komit melalui tabel Room yang sama agar jurnal Cloud Sync meneruskan perubahan sesuai RLS. Skema Room tetap v4.
 
+### Pencarian dan warna mata kuliah
+
+1. Tab **Belum Selesai** dan **Selesai** memakai satu kueri: teks dicocokkan per kata pada judul, mata kuliah, dan deskripsi tanpa membedakan huruf besar dan aksen, ditambah chip mata kuliah dan kesulitan 1–5. Chip mata kuliah hanya menampilkan mata kuliah yang masih cocok dengan teks dan kesulitan. **Reset filter** mengosongkan semuanya, dan empty state menjelaskan bahwa tidak ada tugas yang cocok.
+2. Kunci mata kuliah adalah nama yang di-trim, spasi digabung, dan huruf kecil. Warna otomatis memakai FNV-1a UTF-8 dari kunci itu, lalu finalizer MurmurHash3 agar nama yang mirip tetap tersebar, modulo 10 slot palet. Hasilnya sama di setiap perangkat. Setiap slot punya varian Light (halaman putih) dan Dark (halaman hitam). Kontras label terhadap chip minimal 4,5:1, dan titik warna terhadap halaman minimal 3:1. Warna tampil di kartu tugas, Jadwal, Kalender (sesi memakai warna mata kuliah, deadline tetap merah dengan titik warna), dan Statistik.
+3. Pilihan warna manual disimpan per UID di SharedPreferences `course_colors` dan ikut backup JSON. Pilihan ini tidak ikut Cloud Sync karena butuh tabel Supabase baru. Warna otomatis tetap konsisten antarperangkat. Skema Room tetap v4.
+
+### Ekspor .ics
+
+Kalender dan Pengaturan menyimpan file melalui SAF `CreateDocument("text/calendar")` tanpa izin storage. File RFC 5545 memakai CRLF, folding 75 oktet yang tidak memotong UTF-8, escaping TEXT, `DTSTAMP`, dan UID stabil `session-…`, `fixed-…`, `event-…@tazer`. Sesi `PENDING` yang belum berakhir ditulis dalam UTC. Jadwal tetap ditulis sebagai `RRULE:FREQ=WEEKLY;BYDAY=…` dengan waktu lokal floating, dan acara kalender mempertahankan tanggal inklusif Room (`DTEND` all-day eksklusif). `X-WR-TIMEZONE` memuat zona profil. File bisa diimpor ke Google Calendar dan kembali ke Tazer.
+
+### Backup JSON
+
+1. Pengaturan menyediakan **Ekspor Backup JSON** (`CreateDocument`) dan **Impor Backup JSON** (`OpenDocument`). Format `{"format":"tazer-backup","schemaVersion":1,…}` memuat profil waktu, tugas, subtask, jadwal tetap, acara kalender, riwayat sesi `DONE`, dan `courseColors`. Baris tidak memuat `ownerUid`, dan format tidak punya tempat untuk token Supabase, kunci BYOK, atau checkpoint timer.
+2. Impor membaca maksimal 8 MB, memvalidasi semua baris seperti formulir, menolak versi skema yang lebih baru, lalu menampilkan pratinjau jumlah item baru, duplikat, dan perubahan profil. Restore berjalan dalam satu transaksi Room untuk UID aktif tanpa menyentuh sesi login. ID asli dipertahankan agar Cloud Sync menggabungkan baris yang sama. Baris yang sudah dimiliki akun dilewati, dan ID milik akun lain di perangkat yang sama diganti ID turunan yang stabil. Item baru tercatat di jurnal Cloud Sync, lalu rencana dihitung ulang.
+
+### Paket tugas kelompok
+
+Tombol **Bagikan** pada kartu tugas membuka Android Share Sheet berisi ringkasan, tautan `tazer://import-task?d=…`, dan kode `TAZER-TASK-V1:…`. Payload berupa JSON base64url `{"v":1,"title","course","description","deadline"(RFC 3339 UTC),"difficulty","minutes","subtasks":[…]}` tanpa ID, UID, progres, atau token, dengan batas 24 KB dan 40 subtask. **Impor Paket Tugas** di Tambah tugas atau tautan `tazer://import-task` menampilkan pratinjau lengkap. Tugas dan semua subtask tersimpan dalam satu transaksi setelah user mengetuk **Simpan tugas**.
+
+### Catatan rilis
+
+Cek Update merender `body` GitHub Releases (maksimal 2.000 karakter) sebagai heading `#`, bullet `-`/`*`/`+`, paragraf, dan teks tebal `**…**`. Tanda Markdown mentah tidak ditampilkan.
+
 ### Analyzer
 
 Input memiliki `title` dan `course` 1–120 karakter setelah trim, `description` 0–4000 karakter, serta `deadlineAt` RFC 3339 UTC. Batas body 32 KiB. Deadline lampau boleh dianalisis.

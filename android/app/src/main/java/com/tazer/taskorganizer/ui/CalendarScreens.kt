@@ -90,7 +90,7 @@ private fun MonthPicker(month: YearMonth, modifier: Modifier, contentPadding: Pa
 
 private data class AgendaItem(
     val key: String, val title: String, val kind: String, val time: String,
-    val event: CalendarEvent? = null, val session: WorkSession? = null,
+    val event: CalendarEvent? = null, val session: WorkSession? = null, val course: String? = null,
 )
 
 @OptIn(ExperimentalComposeUiApi::class)
@@ -114,11 +114,12 @@ internal fun CalendarScreen(workspace: Workspace, state: TazerState, zone: ZoneI
                         it.startMinute?.takeIf { _ -> date.toEpochDay() == it.startEpochDay }?.let(::formatMinute) ?: "Seharian", event = it))
                 }
                 workspace.tasks.filter { localDate(it.deadlineAt, zone) == date }.forEach {
-                    add(AgendaItem("task-" + it.id, it.title, "Deadline", formatTime(it.deadlineAt, zone)))
+                    add(AgendaItem("task-" + it.id, it.title, "Deadline", formatTime(it.deadlineAt, zone), course = it.course))
                 }
                 workspace.sessions.filter { it.state != WorkSessionState.CANCELLED && it.plannedStartAt < dayEnd && it.plannedEndAt > dayStart }.forEach {
                     val task = byId[it.taskId] ?: return@forEach
-                    add(AgendaItem("session-" + it.id, task.title, "Sesi fokus", formatTime(maxOf(dayStart, it.plannedStartAt), zone), session = it))
+                    add(AgendaItem("session-" + it.id, task.title, "Sesi fokus", formatTime(maxOf(dayStart, it.plannedStartAt), zone),
+                        session = it, course = task.course))
                 }
                 Scheduler.fixedBlocksForDay(rules, date, zone).forEach { (rule, block) ->
                     add(AgendaItem("fixed-" + rule.id, rule.label, "Jadwal tetap", formatTime(maxOf(dayStart, block.startAt), zone)))
@@ -170,6 +171,7 @@ internal fun CalendarScreen(workspace: Workspace, state: TazerState, zone: ZoneI
                 FilledTonalButton(onClick = { editId = "" }, enabled = !state.busy) { Text("Tambah acara") }
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                ExportIcsButton(model, Modifier.padding(end = 8.dp))
                 key(workspace.profile.ownerUid, workspace.profile.zoneId) {
                     ImportIcsButton(workspace.profile.ownerUid, state.busy, model)
                 }
@@ -181,7 +183,7 @@ internal fun CalendarScreen(workspace: Workspace, state: TazerState, zone: ZoneI
         }
         items(agenda[day].orEmpty(), key = AgendaItem::key) { item ->
             ListItem(
-                headlineContent = { AgendaPill(item.title, item.kind) },
+                headlineContent = { AgendaPill(item.title, item.kind, course = item.course) },
                 supportingContent = {
                     val details = item.event?.description?.takeIf(String::isNotBlank)
                     Text(listOfNotNull(item.kind, details).joinToString(" · "))
@@ -285,6 +287,8 @@ private fun CalendarWeek(
                             first.kind,
                             Modifier.fillMaxWidth(),
                             compact = true,
+                            // A cell summarising several items should not wear one course's colour.
+                            course = first.course.takeIf { entries.size == 1 },
                         )
                         if (entries.size == 1 && first.time != "Seharian") {
                             Text(
@@ -324,21 +328,30 @@ private fun CalendarWeek(
 }
 
 @Composable
-private fun AgendaPill(title: String, kind: String, modifier: Modifier = Modifier, compact: Boolean = false) {
+private fun AgendaPill(
+    title: String, kind: String, modifier: Modifier = Modifier, compact: Boolean = false, course: String? = null,
+) {
     val colors = MaterialTheme.colorScheme
-    val (background, ink) = when (kind) {
-        "Deadline" -> colors.errorContainer to colors.onErrorContainer
-        "Sesi fokus" -> colors.primaryContainer to colors.onPrimaryContainer
+    // Sessions take their course colour; deadlines stay red and carry a course dot.
+    val (background, ink) = when {
+        kind == "Deadline" -> colors.errorContainer to colors.onErrorContainer
+        course != null -> courseContainer(course)
+        kind == "Sesi fokus" -> colors.primaryContainer to colors.onPrimaryContainer
         else -> colors.secondaryContainer to colors.onSecondaryContainer
     }
     Surface(modifier.testTag("calendar-event-pill"), color = background, contentColor = ink, shape = RoundedCornerShape(7.dp)) {
-        Text(
-            title,
+        Row(
             Modifier.padding(horizontal = if (compact) 3.dp else 8.dp, vertical = if (compact) 1.dp else 3.dp),
-            style = if (compact) MaterialTheme.typography.labelMedium else MaterialTheme.typography.titleSmall,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (course != null) CourseDot(course, Modifier.padding(end = if (compact) 3.dp else 6.dp), size = if (compact) 6 else 8)
+            Text(
+                title,
+                style = if (compact) MaterialTheme.typography.labelMedium else MaterialTheme.typography.titleSmall,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 

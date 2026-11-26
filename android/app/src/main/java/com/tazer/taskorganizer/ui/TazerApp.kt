@@ -131,7 +131,8 @@ fun TazerApp(
     }
     ThemeSystemBars(dark)
     MaterialTheme(colorScheme = if (dark) NightColors else DayColors) {
-        CompositionLocalProvider(LocalTazerDark provides dark) {
+        val coursePalette = remember(state.courseColors, dark) { CoursePalette(state.courseColors, dark) }
+        CompositionLocalProvider(LocalTazerDark provides dark, LocalCoursePalette provides coursePalette) {
         val workspace = state.data
         when {
             state.recovery || state.uid == null -> Scaffold(snackbarHost = { SnackbarHost(snackbar) }) { padding ->
@@ -266,6 +267,9 @@ private fun WorkspaceScreen(
         }
     }
     if (deferDialog) DeferFocusDialog(zone, state.busy, model) { deferDialog = false }
+    state.pendingPackage?.let { pack ->
+        PackageReviewDialog(pack, zone, state.busy, onSave = { model.importPackage(pack, closeEditor) }, onDismiss = model::dismissPackage)
+    }
     if (permissionDialog) FocusPermissionsDialog(model.focus, permissionRefresh, launch, requestNotifications,
         onPresetSaved = model::refreshPlan, close = { permissionDialog = false })
 }
@@ -312,7 +316,7 @@ internal fun TimerIconButton(label: String, onClick: () -> Unit) {
     ) { TazerIcon(TazerGlyph.Timer, label) }
 }
 
-internal enum class TazerGlyph { Tasks, Timeline, Calendar, Settings, Statistics, Timer, Previous, Next, Down, Edit, Delete, Check, Add, Camera, Image }
+internal enum class TazerGlyph { Tasks, Timeline, Calendar, Settings, Statistics, Timer, Previous, Next, Down, Edit, Delete, Check, Add, Camera, Image, Search, Share }
 
 @Composable
 internal fun TazerIcon(glyph: TazerGlyph, description: String? = null) {
@@ -396,6 +400,17 @@ internal fun TazerIcon(glyph: TazerGlyph, description: String? = null) {
                 line(.42f, .19f, .58f, .19f)
                 line(.58f, .19f, .64f, .30f)
                 drawCircle(ink, size.width * .14f, point(.5f, .56f), style = Stroke(1.8.dp.toPx()))
+            }
+            TazerGlyph.Search -> {
+                drawCircle(ink, size.width * .25f, point(.43f, .43f), style = Stroke(1.8.dp.toPx()))
+                line(.61f, .61f, .82f, .82f)
+            }
+            TazerGlyph.Share -> {
+                listOf(.72f to .22f, .28f to .5f, .72f to .78f).forEach { (x, y) ->
+                    drawCircle(ink, size.width * .1f, point(x, y), style = Stroke(1.8.dp.toPx()))
+                }
+                line(.37f, .45f, .63f, .28f)
+                line(.37f, .55f, .63f, .72f)
             }
             TazerGlyph.Image -> {
                 drawRoundRect(ink, point(.14f, .18f), Size(size.width * .72f, size.height * .64f),
