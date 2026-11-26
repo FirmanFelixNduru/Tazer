@@ -32,16 +32,31 @@ internal class PendingAuth(
     )
 
     fun callbackCode(uri: Uri, now: Instant): String {
-        if (
-            !isAuthCallback(uri) || uri.encodedFragment != null ||
-            now.epochSecond >= expiresEpochSeconds ||
-            uri.getQueryParameters("state").singleOrNull() != state ||
-            uri.getQueryParameter("error") != null ||
-            uri.getQueryParameter("error_code") != null
-        ) {
+        if (!isAuthCallback(uri)) fail(IntegrationError.INVALID_CALLBACK)
+        val fragment = uri.encodedFragment?.let { Uri.parse("$AUTH_REDIRECT?$it") }
+        return validateCallback(
+            now, uri.getQueryParameters("state"), uri.getQueryParameters("code"),
+            uri.getQueryParameters("error") + fragment?.getQueryParameters("error").orEmpty(),
+            uri.getQueryParameters("error_code") + fragment?.getQueryParameters("error_code").orEmpty(),
+            fragment != null,
+        )
+    }
+
+    internal fun validateCallback(
+        now: Instant, states: List<String>, codes: List<String>, errors: List<String>,
+        errorCodes: List<String>, hasFragment: Boolean,
+    ): String {
+        if (now.epochSecond >= expiresEpochSeconds || states.singleOrNull() != state) {
             fail(IntegrationError.INVALID_CALLBACK)
         }
-        return uri.getQueryParameters("code").singleOrNull()
+        if (flow == AuthFlow.GOOGLE && codes.isEmpty() && errors.size <= 1 && errorCodes.size <= 1) {
+            when {
+                "access_denied" in errors || "access_denied" in errorCodes -> fail(IntegrationError.GOOGLE_CANCELLED)
+                "provider_disabled" in errorCodes -> fail(IntegrationError.GOOGLE_UNAVAILABLE)
+            }
+        }
+        if (hasFragment || errors.isNotEmpty() || errorCodes.isNotEmpty()) fail(IntegrationError.INVALID_CALLBACK)
+        return codes.singleOrNull()
             ?.takeIf { it.isNotBlank() && it.length <= 512 }
             ?: fail(IntegrationError.INVALID_CALLBACK)
     }
@@ -83,7 +98,12 @@ internal class AuthPkce(noBackupFilesDir: File) {
 
     fun consume(uri: Uri): Pair<PendingAuth, String> {
         val pending = read() ?: fail(IntegrationError.INVALID_CALLBACK)
-        val code = pending.callbackCode(uri, Instant.now())
+        val code = try {
+            pending.callbackCode(uri, Instant.now())
+        } catch (error: IntegrationException) {
+            if (error.code == IntegrationError.GOOGLE_CANCELLED || error.code == IntegrationError.GOOGLE_UNAVAILABLE) clear()
+            throw error
+        }
         clear()
         return pending to code
     }
@@ -100,4 +120,8 @@ internal class AuthPkce(noBackupFilesDir: File) {
     }
 
     fun clear() = file.delete()
+
+    fun cancelGoogle() {
+        if (read()?.flow == AuthFlow.GOOGLE) clear()
+    }
 }

@@ -51,6 +51,12 @@ Tempel awalan itu sebelum instruksi peran. Lead memakai model yang ditetapkan pa
 2. Uji tiga preset pada Scheduler dan simulasikan DND tanpa akses, aktif, jeda, selesai, dan pemulihan. Periksa Statistik dan impor file pada emulator API 37 di Light dan Dark.
 3. Build APK signed 1.4.0 kode 10. Uji upgrade dari signed 1.3.0, termasuk akun, Cloud Sync, checklist, kalender, tema, dan widget yang telah dipasang. Periksa Worker `/health`, lint, tanda tangan, secret scan, dan graph.
 
+## Gate rilis 1.5.0
+
+1. Uji migrasi kuota 100 pada PostgreSQL dengan pemakaian lama, dua UID, akses role, dan permintaan paralel. Terapkan migrasi di Supabase Free, lalu cek angka dan satu pengurangan kuota melalui Worker.
+2. Aktifkan provider Google di Supabase. Uji PKCE S256, state, callback sukses atau dibatalkan, email login, dan status provider di staging.
+3. Audit working tree, seluruh sejarah Git, dan APK sebelum publikasi. Build signed 1.5.0 kode 11 dan uji upgrade dari 1.4.0. Publikasikan APK dan checksum, lalu cek endpoint GitHub Releases serta status Cek Update pada aplikasi.
+
 ## Template handoff
 
 1. **Wave [N] — Langkah [X] dari [Y] (~[Z] menit).** [Aksi atau hasil inti, model dan effort aktual.]

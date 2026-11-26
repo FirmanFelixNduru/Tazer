@@ -13,6 +13,7 @@ import android.view.accessibility.AccessibilityNodeInfo
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.tazer.taskorganizer.MainActivity
+import com.tazer.taskorganizer.BuildConfig
 import com.tazer.taskorganizer.data.CalendarRepository
 import com.tazer.taskorganizer.data.TaskRepository
 import com.tazer.taskorganizer.data.TazerDatabase
@@ -53,6 +54,43 @@ class ReleaseUiTest {
     private fun finish() {
         activity?.let { current -> instrumentation.runOnMainSync { current.finish() } }
         activity = null
+    }
+
+    @Test
+    fun settingsShowsInstalledVersionAndUpdateCheckReturnsAStatus() {
+        try {
+            launch()
+            waitFor("Settings unavailable") { clickText("Pengaturan") }
+            waitFor("Installed version missing") { findText("Versi terpasang ${BuildConfig.VERSION_NAME}") != null }
+            waitFor("Update check could not be tapped") { clickText("Cek Update") }
+            waitFor("Update check did not return a result") {
+                if (Build.VERSION.SDK_INT >= 33) automation.clearCache()
+                nodes {
+                    val value = it.text?.toString().orEmpty()
+                    value.startsWith("Pembaruan belum bisa diperiksa.") || value == "Rilis publik belum tersedia." ||
+                        value == "Aplikasi sudah versi terbaru." || value == "Batas permintaan GitHub tercapai. Coba lagi nanti." ||
+                        value.startsWith("Versi ") && value.endsWith(" tersedia")
+                }.isNotEmpty()
+            }
+        } finally {
+            finish()
+        }
+    }
+
+    @Test
+    fun googleSignInIsReachableOnLoginScreen() {
+        if (BuildConfig.SUPABASE_URL.isEmpty()) return
+        try {
+            activity = instrumentation.startActivitySync(Intent(context, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
+            waitFor("Google sign-in is missing or disabled") {
+                var node = findText("Masuk dengan Google")
+                while (node != null && !node.isClickable) node = node.parent
+                node?.isEnabled == true
+            }
+        } finally {
+            finish()
+        }
     }
 
     @Test

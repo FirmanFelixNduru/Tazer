@@ -35,13 +35,13 @@ Supabase Free menyediakan Auth dan PostgreSQL. Android memakai email/password de
 | Endpoint | Request | Respons sukses |
 | --- | --- | --- |
 | `GET /auth/session` | Authorization: Bearer | `200 { "uid": "u1" }` |
-| `GET /subscription` | Authorization: Bearer | `200 { "tier": "PRO", "monthlyLimit": 20, "remaining": 19, "resetsAt": "2026-12-01T00:00:00Z" }` |
+| `GET /subscription` | Authorization: Bearer | `200 { "tier": "PRO", "monthlyLimit": 100, "remaining": 99, "resetsAt": "2026-12-01T00:00:00Z" }` |
 | `POST /analyze-task` | Bearer dan JSON input | `200 { "difficultyScore": 4, "estimatedMinutes": 150 }` |
 | `GET /health` | Tanpa autentikasi | `200` jika binding siap atau `503` jika belum lengkap. Respons hanya memuat `ready` dan boolean konfigurasi publik `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `GEMINI_MODEL`. Pemeriksaan ini membaca konfigurasi tanpa memanggil layanan eksternal. |
 
 ### Entitlement akun dan kuota bulanan
 
-1. `FREE` menggunakan analisis offline. `PRO` memakai AI server, default 20 permintaan per UID per bulan UTC. Operator menetapkan PRO gratis melalui Supabase. `BYOK` memakai provider langsung dari Android dengan key milik user, tanpa konsumsi kuota server. Default untuk akun tanpa row adalah FREE. FREE/BYOK mendapat `monthlyLimit: 0` dan `remaining: 0`.
+1. `FREE` menggunakan analisis offline. `PRO` memakai AI server dengan 100 permintaan per UID per bulan UTC. Migrasi mempertahankan penggunaan bulan berjalan. Android membaca batas aktual dari `GET /subscription`. Operator menetapkan PRO gratis melalui Supabase. `BYOK` memakai provider langsung dari Android dengan key milik user, tanpa konsumsi kuota server. Default untuk akun tanpa row adalah FREE. FREE/BYOK mendapat `monthlyLimit: 0` dan `remaining: 0`.
 2. Simpan tier di `account_entitlements(user_id, tier)` dan penggunaan di `analysis_usage(user_id, month_start, used)`. Hanya role server memiliki akses. Server menentukan tier dan mengambil slot kuota lewat RPC PostgreSQL transaksional. Konsumsi satu slot per permintaan valid yang diterima, termasuk jika provider kemudian gagal. Fallback Gemini ke Groq tidak mengurangi slot tambahan. Waktu reset adalah awal bulan UTC berikutnya.
 3. Backend memverifikasi sesi dan entitlement untuk setiap analisis sebelum provider dipanggil. Jika verifikasi Auth atau database tidak tersedia, kembalikan `503`. Jika tier bukan PRO, kembalikan `403`. Jika kuota PRO habis, kembalikan `429`. Mock lokal meniru tier dan kuota dengan penyimpanan in-memory.
 4. Kunci project khusus server berada di env/secret store. Aplikasi memuat konfigurasi publik Supabase saja. Untuk BYOK Wave 2, simpan ciphertext AES-GCM dengan kunci dari Android Keystore per akun dan eksklusi backup. Kirim key hanya melalui HTTPS langsung ke provider yang dipilih user. User dapat menghapusnya. Jelaskan penggunaan konten oleh free tier sebelum pengiriman.

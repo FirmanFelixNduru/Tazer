@@ -24,7 +24,6 @@ coverage/
 # Credentials and local configuration
 .env
 .env.*
-!.env.example
 .dev.vars
 .dev.vars.*
 *.pem

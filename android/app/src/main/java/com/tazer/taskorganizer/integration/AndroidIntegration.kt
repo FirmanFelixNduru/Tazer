@@ -68,6 +68,9 @@ class AndroidIntegration(context: Context) {
 
     suspend fun googleSignInIntent(): Intent = serialized {
         requireConfig()
+        val providers = auth("/settings", method = "GET").optJSONObject("external")
+            ?: fail(IntegrationError.INVALID_RESPONSE)
+        if (!providers.optBoolean("google")) fail(IntegrationError.GOOGLE_UNAVAILABLE)
         val pending = pkce.start(AuthFlow.GOOGLE)
         val url = Uri.parse("${BuildConfig.SUPABASE_URL}/auth/v1/authorize").buildUpon()
             .appendQueryParameter("provider", "google")
@@ -77,6 +80,8 @@ class AndroidIntegration(context: Context) {
             .build()
         Intent(Intent.ACTION_VIEW, url).addCategory(Intent.CATEGORY_BROWSABLE)
     }
+
+    suspend fun cancelGoogleSignIn() = serialized { pkce.cancelGoogle() }
 
     fun isAuthCallback(uri: Uri?): Boolean = com.tazer.taskorganizer.integration.isAuthCallback(uri)
 

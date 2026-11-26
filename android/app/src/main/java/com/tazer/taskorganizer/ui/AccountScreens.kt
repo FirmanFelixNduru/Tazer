@@ -80,6 +80,12 @@ internal fun LoginScreen(model: TazerViewModel, state: TazerState, launch: (Inte
                 OutlinedButton(onClick = { model.startGoogle(launch) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth()) {
                     Text("Masuk dengan Google")
                 }
+                if (state.googlePending) {
+                    Text("Selesaikan login di browser atau batalkan untuk mencoba lagi.")
+                    OutlinedButton(onClick = model::cancelGoogle, enabled = !state.busy) {
+                        Text("Batalkan login Google")
+                    }
+                }
                 FlowRow {
                     OutlinedButton(onClick = { model.signUp(email, password) }, enabled = canSubmit) { Text("Daftar") }
                     OutlinedButton(onClick = { model.resetPassword(email) }, enabled = !state.busy && email.isNotBlank()) {

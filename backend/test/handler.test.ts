@@ -106,7 +106,7 @@ test("analysis validates JSON shape, dimensions and date before charging", async
   await checkError(await handle(badMime), 400, "VALIDATION_ERROR");
   await checkError(await analyze(" ".repeat(32 * 1024 + 1)), 413, "PAYLOAD_TOO_LARGE");
   assert.equal(received.length, 0);
-  assert.equal((await (await handle(request("/subscription", "demo-pro"))).json()).remaining, 20);
+  assert.equal((await (await handle(request("/subscription", "demo-pro"))).json()).remaining, 100);
 
   const body = JSON.stringify(input);
   const response = await analyze(body.padEnd(32 * 1024));
@@ -156,7 +156,7 @@ test("opted-in analysis trims valid suggestions and omits an invalid list", asyn
   }
 });
 
-test("parallel requests take exactly 20 slots and the UTC rollover resets the quota", async () => {
+test("parallel requests take exactly 100 slots and the UTC rollover resets the quota", async () => {
   let now = "2026-11-30T23:59:59Z";
   const deps = mockDependencies(() => new Date(now));
   let analyzed = 0;
@@ -166,20 +166,20 @@ test("parallel requests take exactly 20 slots and the UTC rollover resets the qu
   };
   const handle = createHandler(deps);
   const analyze = () => handle(request("/analyze-task", "demo-pro", JSON.stringify(input)));
-  const responses = await Promise.all(Array.from({ length: 28 }, analyze));
-  assert.equal(analyzed, 20);
-  assert.equal(responses.filter(response => response.status === 200).length, 20);
+  const responses = await Promise.all(Array.from({ length: 108 }, analyze));
+  assert.equal(analyzed, 100);
+  assert.equal(responses.filter(response => response.status === 200).length, 100);
   for (const response of responses.filter(response => response.status !== 200)) {
     assert.equal(response.headers.get("retry-after"), "1");
     await checkError(response, 429, "QUOTA_EXHAUSTED");
   }
   const sub = () => handle(request("/subscription", "demo-pro"));
   assert.deepEqual(await (await sub()).json(), {
-    tier: "PRO", monthlyLimit: 20, remaining: 0, resetsAt: "2026-12-01T00:00:00Z",
+    tier: "PRO", monthlyLimit: 100, remaining: 0, resetsAt: "2026-12-01T00:00:00Z",
   });
   now = "2026-12-01T00:00:00Z";
   assert.deepEqual(await (await sub()).json(), {
-    tier: "PRO", monthlyLimit: 20, remaining: 20, resetsAt: "2027-01-01T00:00:00Z",
+    tier: "PRO", monthlyLimit: 100, remaining: 100, resetsAt: "2027-01-01T00:00:00Z",
   });
   assert.equal((await analyze()).status, 200);
 });
@@ -202,5 +202,5 @@ test("invalid provider results and exceptions consume the slot and return a gene
     const response = await handle(request("/analyze-task", "demo-pro", JSON.stringify(input)));
     await checkError(response, 502, "AI_UNAVAILABLE");
   }
-  assert.equal((await (await handle(request("/subscription", "demo-pro"))).json()).remaining, 14);
+  assert.equal((await (await handle(request("/subscription", "demo-pro"))).json()).remaining, 94);
 });

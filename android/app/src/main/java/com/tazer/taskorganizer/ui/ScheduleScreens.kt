@@ -331,6 +331,8 @@ internal fun SettingsScreen(
         item {
             ThemeSetting(theme, setTheme)
             HorizontalDivider(modifier = Modifier.padding(vertical = 14.dp))
+            ReleaseUpdateSetting()
+            HorizontalDivider(modifier = Modifier.padding(vertical = 14.dp))
             OutlinedButton(onClick = openFocusSettings) { Text("Pengaturan fokus") }
             HorizontalDivider(modifier = Modifier.padding(vertical = 14.dp))
             state.cloudStatus?.let { status ->

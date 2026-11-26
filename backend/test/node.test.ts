@@ -61,7 +61,7 @@ test("Node bridge serves all three endpoints over real loopback HTTP", async t =
   assert.equal(sub.status, 200);
   const usage = await sub.json();
   assert.equal(usage.tier, "PRO");
-  assert.equal(usage.remaining, 19);
+  assert.equal(usage.remaining, 99);
 });
 
 test("Node bridge bounds chunked input and refuses mock traffic with a foreign Host or Origin", async t => {

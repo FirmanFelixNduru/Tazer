@@ -29,7 +29,7 @@ export function mockDependencies(now = () => new Date()): Dependencies {
       date.setUTCHours(0, 0, 0, 0);
       const resetsAt = date.toISOString().replace(".000Z", "Z");
       const tier = tiers.get(uid) ?? "FREE";
-      const monthlyLimit = tier === "PRO" ? 20 : 0;
+      const monthlyLimit = tier === "PRO" ? 100 : 0;
       const record = usage.get(uid);
       let used = record?.month === month ? record.used : 0;
       const granted = consume && used < monthlyLimit;

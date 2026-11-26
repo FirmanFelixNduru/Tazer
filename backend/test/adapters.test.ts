@@ -8,7 +8,7 @@ import worker from "../src/worker.js";
 
 const uid = "854359ab-dcb7-4b61-8a94-4a56e153bca1";
 const auth = { id: uid, email: "demo@example.invalid", email_confirmed_at: "2026-11-01T01:00:00+00:00" };
-const entitlement = { tier: "PRO", monthly_limit: 20, remaining: 19, resets_at: "2026-12-01T00:00:00Z", granted: true };
+const entitlement = { tier: "PRO", monthly_limit: 100, remaining: 99, resets_at: "2026-12-01T00:00:00Z", granted: true };
 const input = { title: "Sorting", course: "Algorithms", description: "", deadlineAt: "2026-11-03T00:00:00Z" };
 const result = { difficultyScore: 4, estimatedMinutes: 150 };
 const suggested = { ...result, subtasks: ["Pick a sorting algorithm", "Implement it", "Test duplicate values"] };

@@ -72,6 +72,7 @@ data class TazerState(
     val focusTarget: FocusTarget? = null,
     val now: Long = System.currentTimeMillis(),
     val recovery: Boolean = false,
+    val googlePending: Boolean = false,
     val busy: Boolean = false,
     val message: String? = null,
     val cloudStatus: String? = null,
@@ -153,11 +154,35 @@ class TazerViewModel internal constructor(
         integration.resetPassword(email)
         showMessage("Periksa email untuk melanjutkan pemulihan kata sandi.")
     }
-    fun startGoogle(launch: (Intent) -> Unit) = runAction { launch(integration.googleSignInIntent()) }
+    fun startGoogle(launch: (Intent) -> Unit) = runAction {
+        val intent = integration.googleSignInIntent()
+        try {
+            launch(intent)
+            _state.update { it.copy(googlePending = true) }
+        } catch (_: android.content.ActivityNotFoundException) {
+            integration.cancelGoogleSignIn()
+            throw IntegrationException(IntegrationError.BROWSER_UNAVAILABLE)
+        }
+    }
+
+    fun cancelGoogle() = runAction {
+        integration.cancelGoogleSignIn()
+        _state.update { it.copy(googlePending = false) }
+        showMessage(IntegrationError.GOOGLE_CANCELLED.message)
+    }
 
     fun handleAuthCallback(uri: Uri?) {
         if (uri != null && integration.isAuthCallback(uri)) runAction {
-            when (val callback = integration.handleAuthCallback(uri)) {
+            val callback = try {
+                integration.handleAuthCallback(uri)
+            } catch (error: IntegrationException) {
+                if (error.code != IntegrationError.INVALID_CALLBACK) {
+                    _state.update { it.copy(googlePending = false) }
+                }
+                throw error
+            }
+            _state.update { it.copy(googlePending = false) }
+            when (callback) {
                 is AuthCallback.SignedIn -> enter(callback.account)
                 AuthCallback.PasswordRecovery -> _state.update { it.copy(recovery = true) }
             }

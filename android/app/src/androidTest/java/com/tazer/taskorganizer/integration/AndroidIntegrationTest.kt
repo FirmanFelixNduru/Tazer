@@ -39,8 +39,9 @@ class AndroidIntegrationTest {
 
     @Test
     fun backendRequiresExpectedStatusAndSubscriptionShape() {
-        val valid = """{"tier":"PRO","monthlyLimit":20,"remaining":1,"resetsAt":"2026-12-01T00:00:00Z"}"""
+        val valid = """{"tier":"PRO","monthlyLimit":100,"remaining":1,"resetsAt":"2026-12-01T00:00:00Z"}"""
         assertEquals(SubscriptionTier.PRO, HttpResponse(200, valid, null).backendJson().subscription().tier)
+        assertEquals(100, parseJson(valid).subscription().monthlyLimit)
         expectError(IntegrationError.INVALID_RESPONSE) { parseJson(valid.replace("PRO", "FREE")).subscription() }
         expectError(IntegrationError.INVALID_RESPONSE) {
             HttpResponse(403, """{"error":{"code":"QUOTA_EXHAUSTED"}}""", null).backendJson()
@@ -51,6 +52,36 @@ class AndroidIntegrationTest {
         }
         assertEquals(IntegrationError.QUOTA_EXHAUSTED, failure.code)
         assertEquals(55L, failure.retryAfterSeconds)
+    }
+
+    @Test
+    fun googleDenialAndExplicitCancellationConsumeOnlyTheMatchingGoogleFlow() {
+        val directory = File(context.noBackupFilesDir, UUID.randomUUID().toString())
+        assertTrue(directory.mkdirs())
+        val pkce = AuthPkce(directory)
+        try {
+            val google = pkce.start(AuthFlow.GOOGLE)
+            expectError(IntegrationError.INVALID_CALLBACK) {
+                pkce.consume(Uri.parse("$AUTH_REDIRECT?state=wrong#error=access_denied"))
+            }
+            expectError(IntegrationError.GOOGLE_CANCELLED) {
+                pkce.consume(Uri.parse("${google.redirect}#error=access_denied"))
+            }
+            expectError(IntegrationError.INVALID_CALLBACK) {
+                pkce.consume(Uri.parse("${google.redirect}&code=example"))
+            }
+            val newGoogle = pkce.start(AuthFlow.GOOGLE)
+            pkce.cancelGoogle()
+            expectError(IntegrationError.INVALID_CALLBACK) {
+                pkce.consume(Uri.parse("${newGoogle.redirect}&code=example"))
+            }
+            val recovery = pkce.start(AuthFlow.RECOVERY)
+            pkce.cancelGoogle()
+            assertEquals("recovery-code", pkce.consume(Uri.parse("${recovery.redirect}&code=recovery-code")).second)
+        } finally {
+            pkce.clear()
+            directory.delete()
+        }
     }
 
     @Test
