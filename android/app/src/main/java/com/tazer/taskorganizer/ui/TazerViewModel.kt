@@ -147,6 +147,8 @@ class TazerViewModel internal constructor(
     val state = _state.asStateFlow()
     val authAvailable get() = integration.enabled
     val mockAvailable get() = integration.mockEnabled
+    val rememberSession get() = integration.rememberSession
+    fun setRememberSession(remember: Boolean) = runAction { integration.setRememberSession(remember) }
     val subtasksAvailable get() = subtaskRepository != null
 
     private var ownerJob: Job? = null

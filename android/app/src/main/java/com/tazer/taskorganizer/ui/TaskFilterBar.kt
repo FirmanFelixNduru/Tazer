@@ -10,6 +10,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -29,7 +30,8 @@ internal fun TaskFilterBar(query: TaskQuery, courses: List<String>, onQuery: (Ta
         OutlinedTextField(
             value = query.text,
             onValueChange = { onQuery(query.copy(text = it.take(120))) },
-            modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Cari tugas" },
+            modifier = Modifier.fillMaxWidth().neumorphicInset(neu(), 26.dp).semantics { contentDescription = "Cari tugas" },
+            shape = RoundedCornerShape(26.dp),
             placeholder = { Text("Cari judul, mata kuliah, atau deskripsi") },
             leadingIcon = { TazerIcon(TazerGlyph.Search) },
             trailingIcon = if (query.text.isNotEmpty()) {

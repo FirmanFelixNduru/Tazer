@@ -69,7 +69,7 @@ Supabase Free menyediakan Auth dan PostgreSQL. Android memakai email/password de
 ### Pencarian dan warna mata kuliah
 
 1. Tab **Belum Selesai** dan **Selesai** memakai satu kueri: teks dicocokkan per kata pada judul, mata kuliah, dan deskripsi tanpa membedakan huruf besar dan aksen, ditambah chip mata kuliah dan kesulitan 1–5. Chip mata kuliah hanya menampilkan mata kuliah yang masih cocok dengan teks dan kesulitan. **Reset filter** mengosongkan semuanya, dan empty state menjelaskan bahwa tidak ada tugas yang cocok.
-2. Kunci mata kuliah adalah nama yang di-trim, spasi digabung, dan huruf kecil. Warna otomatis memakai FNV-1a UTF-8 dari kunci itu, lalu finalizer MurmurHash3 agar nama yang mirip tetap tersebar, modulo 10 slot palet. Hasilnya sama di setiap perangkat. Setiap slot punya varian Light (halaman putih) dan Dark (halaman hitam). Kontras label terhadap chip minimal 4,5:1, dan titik warna terhadap halaman minimal 3:1. Warna tampil di kartu tugas, Jadwal, Kalender (sesi memakai warna mata kuliah, deadline tetap merah dengan titik warna), dan Statistik.
+2. Kunci mata kuliah adalah nama yang di-trim, spasi digabung, dan huruf kecil. Warna otomatis memakai FNV-1a UTF-8 dari kunci itu, lalu finalizer MurmurHash3 agar nama yang mirip tetap tersebar, modulo 10 slot palet. Hasilnya sama di setiap perangkat. Setiap slot punya varian Light (halaman putih) dan Dark (halaman hitam). Kontras label terhadap chip minimal 4,5:1, dan titik warna terhadap halaman minimal 3:1. Warna tampil di kartu tugas, Jadwal, Kalender (sesi memakai warna mata kuliah, deadline tetap merah dengan titik warna), dan Statistik. Sejak v1.9.0 kontras yang sama juga berlaku di kanvas neumorphic `#EDF2FB` dan `#141923` beserta permukaan kartunya ([spesifikasi UI](UI_NEUMORPHIC_SPEC.md)).
 3. Pilihan warna manual disimpan per UID di SharedPreferences `course_colors` dan ikut backup JSON. Pilihan ini tidak ikut Cloud Sync karena butuh tabel Supabase baru. Warna otomatis tetap konsisten antarperangkat.
 
 ### Ekspor .ics
@@ -87,7 +87,7 @@ Tombol **Bagikan** pada kartu tugas membuka Android Share Sheet berisi ringkasan
 
 ### Navigasi jadwal dan acara
 
-1. Tombol `+` di layar **Jadwal** membuka dua pilihan, yaitu **Tambah Acara** dan **Jadwal Tetap**, yang masing-masing membuka halaman khusus. Jadwal tetap hanya dikelola di halaman ini, tidak lagi di Pengaturan maupun Kalender. **Pengaturan fokus** hanya ada di Pengaturan.
+1. Sejak v1.9.0, tombol `+` (squircle royal blue, label aksesibilitas "Tambah ke jadwal") ada di layar **Kalender** dan menggantikan tombol "Tambah acara" lama. Tombol ini membuka dua pilihan, yaitu **Tambah Acara** dan **Jadwal Tetap**, yang masing-masing membuka halaman khusus. Layar **Jadwal** tidak lagi punya tombol `+`. Jadwal tetap hanya dikelola di halaman Jadwal Tetap, tidak di Pengaturan. **Pengaturan fokus** hanya ada di Pengaturan.
 2. Halaman **Acara** hanya memakai input manual: judul, tanggal mulai dan selesai (satu atau beberapa hari), jam mulai dan selesai lewat spinner atau seharian, warna penanda, catatan opsional, lalu daftar acara tersimpan dengan aksi edit dan hapus. Tombol tambah dan edit di Kalender membuka halaman yang sama. Warna penanda tampil di Kalender.
 
 ### Impor jadwal tetap

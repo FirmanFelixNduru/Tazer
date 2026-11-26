@@ -22,6 +22,16 @@ class AndroidIntegration(context: Context) {
         "${BuildConfig.SUPABASE_URL}\n${BuildConfig.BACKEND_URL}",
     )
     private val lock = Mutex()
+    private val loginPreferences = app.getSharedPreferences("tazer_login", Context.MODE_PRIVATE)
+
+    /** Remember Me: when off, the session lives only in memory and the next cold start shows the login screen. */
+    val rememberSession: Boolean get() = loginPreferences.getBoolean(REMEMBER_SESSION, true)
+
+    suspend fun setRememberSession(remember: Boolean): Unit = serialized {
+        loginPreferences.edit().putBoolean(REMEMBER_SESSION, remember).apply()
+        val session = active
+        if (!remember) clearSavedSession() else if (session != null && !session.mock) persist(session)
+    }
     private var active: Session? = null
     private var recovery: Session? = null
 
@@ -292,6 +302,10 @@ class AndroidIntegration(context: Context) {
     }
 
     private fun persist(session: Session) {
+        if (!rememberSession) {
+            clearSavedSession()
+            return
+        }
         sessionVault.save(
             json(
                 "account" to json("uid" to session.verifiedUid().value),
@@ -401,6 +415,7 @@ class AndroidIntegration(context: Context) {
     }
 
     private companion object {
+        const val REMEMBER_SESSION = "remember_session"
         val bearer = Regex("[A-Za-z0-9._~+/-]{1,16384}={0,2}")
         val uuid = Regex("[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", RegexOption.IGNORE_CASE)
     }

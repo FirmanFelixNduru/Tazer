@@ -1,5 +1,6 @@
 package com.tazer.taskorganizer.ui
 
+import androidx.compose.foundation.BorderStroke
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
@@ -25,9 +26,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -142,13 +141,11 @@ internal fun TasksScreen(
     var reopenId by rememberSaveable { mutableStateOf<String?>(null) }
     val taskToDelete = tasks.firstOrNull { it.id == deleteId }
     val taskToReopen = tasks.firstOrNull { it.id == reopenId }
-    PrimaryTabRow(selectedTabIndex = if (archived) 1 else 0) {
-        Tab(selected = !archived, onClick = { onTab(false) }, text = { Text("Belum Selesai") })
-        Tab(selected = archived, onClick = { onTab(true) }, text = { Text("Selesai") })
-    }
+    NeuSegmented(listOf("Belum Selesai", "Selesai"), if (archived) 1 else 0, { onTab(it == 1) },
+        Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 4.dp))
     LazyColumn(
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 88.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 12.dp, bottom = 96.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         if (tabTasks.isNotEmpty()) item(key = "filters") { TaskFilterBar(query, courses, setQuery) }
         if (tabTasks.isEmpty()) item {
@@ -160,7 +157,7 @@ internal fun TasksScreen(
         } else if (tasks.isEmpty()) item(key = "no-match") { FilteredEmpty(archived) { setQuery(TaskQuery()) } }
         items(tasks, key = { it.id }) { task ->
             val sessions = taskSessions[task.id].orEmpty()
-            Surface(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surfaceContainerLow, shape = MaterialTheme.shapes.large) {
+            NeuCard(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
             Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(task.title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
                 CourseChip(task.course)
@@ -240,9 +237,10 @@ internal fun TasksScreen(
 @Composable
 private fun TaskAction(glyph: TazerGlyph, label: String, tint: Color, enabled: Boolean, onClick: () -> Unit) {
     OutlinedIconButton(
-        modifier = Modifier.size(48.dp),
+        modifier = Modifier.size(48.dp).neumorphicRaised(neu(), 24.dp, 3.dp),
         onClick = onClick,
         enabled = enabled,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
         colors = IconButtonDefaults.outlinedIconButtonColors(contentColor = tint),
     ) { TazerIcon(glyph, label) }
 }

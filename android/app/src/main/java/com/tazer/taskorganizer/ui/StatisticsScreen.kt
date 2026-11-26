@@ -11,9 +11,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -99,22 +97,19 @@ internal fun StatisticsScreen(workspace: Workspace, state: TazerState, zone: Zon
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                OutlinedIconButton(onClick = { weeksAgo++ }) {
-                    TazerIcon(TazerGlyph.Previous, "Minggu sebelumnya")
-                }
+                NeuIconAction(TazerGlyph.Previous, "Minggu sebelumnya") { weeksAgo++ }
                 Text(
                     "${rangeDate.format(stats.days.first().date)} – ${rangeDate.format(end)}",
                     modifier = Modifier.weight(1f).semantics { liveRegion = LiveRegionMode.Polite },
                     textAlign = TextAlign.Center,
                     style = MaterialTheme.typography.titleMedium,
                 )
-                OutlinedIconButton(onClick = { weeksAgo-- }, enabled = weeksAgo > 0) {
-                    TazerIcon(TazerGlyph.Next, "Minggu berikutnya")
-                }
+                NeuIconAction(TazerGlyph.Next, "Minggu berikutnya", weeksAgo > 0) { weeksAgo-- }
             }
         }
         item {
-            Column(Modifier.padding(top = 16.dp, bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            NeuCard(Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 10.dp)) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 StatisticsHeading("Fokus harian")
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -138,11 +133,12 @@ internal fun StatisticsScreen(workspace: Workspace, state: TazerState, zone: Zon
                 }
                 DailyFocusChart(stats.days, integerFormat)
             }
+            }
         }
         item {
             val accuracy = stats.accuracy
-            HorizontalDivider()
-            Column(Modifier.padding(vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            NeuCard(Modifier.fillMaxWidth().padding(vertical = 10.dp)) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Statistic(
                     label = "Akurasi estimasi",
                     value = accuracy?.let { "${it.percent}%" },
@@ -164,10 +160,10 @@ internal fun StatisticsScreen(workspace: Workspace, state: TazerState, zone: Zon
                     detail = "Hari berurutan dengan setidaknya satu tugas selesai tepat waktu.",
                 )
             }
+            }
         }
         item {
-            HorizontalDivider()
-            Column(Modifier.padding(top = 20.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.padding(top = 18.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 StatisticsHeading("Fokus per mata kuliah")
                 if (stats.courses.isEmpty()) {
                     Text(

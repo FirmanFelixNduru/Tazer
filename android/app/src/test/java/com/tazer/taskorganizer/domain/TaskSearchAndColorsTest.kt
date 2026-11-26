@@ -59,11 +59,13 @@ class TaskSearchAndColorsTest {
     }
 
     @Test
-    fun everySwatchIsReadableOnWhiteAndBlackPages() {
+    fun everySwatchIsReadableOnWhiteBlackAndNeumorphicPages() {
         assertEquals(10, CourseColors.palette.size)
         assertEquals(CourseColors.palette.size, CourseColors.palette.map { it.light.container }.toSet().size)
         for (swatch in CourseColors.palette) {
-            for ((page, tone) in listOf(0xFFFFFFFF to swatch.light, 0xFF000000 to swatch.dark)) {
+            // White/black plus the v1.9.0 neumorphic canvas and raised-card surfaces.
+            for ((page, tone) in listOf(0xFFFFFFFF to swatch.light, 0xFFEDF2FB to swatch.light, 0xFFF4F7FD to swatch.light,
+                0xFF000000 to swatch.dark, 0xFF141923 to swatch.dark, 0xFF1A2130 to swatch.dark)) {
                 assertTrue("${swatch.name} label contrast", CourseColors.contrast(tone.ink, tone.container) >= 4.5)
                 assertTrue("${swatch.name} dot on chip", CourseColors.contrast(tone.accent, tone.container) >= 1.5)
                 assertTrue("${swatch.name} dot on page", CourseColors.contrast(tone.accent, page) >= 3.0)

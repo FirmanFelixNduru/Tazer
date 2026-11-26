@@ -1,13 +1,12 @@
 package com.tazer.taskorganizer.ui
 
+import androidx.compose.foundation.layout.padding
 import android.app.Activity
 import android.content.Context
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -61,10 +60,7 @@ internal fun ThemeSystemBars(dark: Boolean) {
 internal fun ThemeSetting(theme: TazerThemeMode, setTheme: (TazerThemeMode) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text("Tema", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TazerThemeMode.entries.forEach { mode ->
-                FilterChip(selected = mode == theme, onClick = { setTheme(mode) }, label = { Text(mode.label) })
-            }
-        }
+        val modes = TazerThemeMode.entries
+        NeuSegmented(modes.map { it.label }, modes.indexOf(theme), { setTheme(modes[it]) }, Modifier.padding(top = 6.dp))
     }
 }

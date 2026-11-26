@@ -36,6 +36,7 @@ Tazer/
 │   ├── DATA_AND_API_CONTRACT.md
 │   ├── SCHEDULER_SPEC.md
 │   ├── WAVE_PLAN.md
+│   ├── UI_NEUMORPHIC_SPEC.md
 │   └── references/   # aset referensi UI dan spesifikasi token visual
 ├── graphify-out/
 │   ├── graph.json
@@ -71,6 +72,13 @@ Tazer/
 2. UI wajib memeriksa jalur dua tab, edit estimasi, reopen, hapus arsip, dialog keputusan timer, serta label dan fokus aksesibilitas. Timer wajib menguji alarm/aksi duplikat, process death, reboot, Doze, serta izin exact alarm dan notifikasi diizinkan maupun ditolak.
 3. Backend wajib menguji token salah/kedaluwarsa/tercabut, tier FREE/PRO/BYOK, kuota habis dan persaingan request, serta parsing output AI dengan mock. Pastikan cabang tanpa otorisasi menghasilkan nol panggilan AI. Gate rilis mencakup inspeksi APK dan secret scan.
 4. Catat pemeriksaan yang belum dapat dijalankan beserta penyebabnya. Gate terkait tetap terbuka sampai ada bukti pada lingkungan yang sesuai.
+
+## Perangkat uji
+
+1. Utamakan HP fisik owner (saat ini `f27c063e` / `CPH2375`) bila terhubung lewat ADB. Jangan menyalakan emulator QEMU selama HP itu tersedia, agar RAM laptop tetap lega. Pakai emulator hanya untuk tes yang memang membutuhkannya, misalnya reboot atau upgrade dari instalasi bersih. Setelah selesai, matikan dengan `adb -s emulator-5554 emu kill`.
+2. Saat lebih dari satu perangkat terhubung, setiap perintah `adb` wajib memakai `-s <serial>`, dan Gradle memakai `ANDROID_SERIAL=<serial>`. Dengan begitu `connectedDebugAndroidTest` tidak pernah berjalan di perangkat yang salah.
+3. Di HP fisik owner, `adb reboot`, `adb uninstall com.tazer.taskorganizer`, `adb shell pm clear com.tazer.taskorganizer`, serta perubahan setelan sistem (DND, jam, zona) tanpa pemulihan **dilarang**. APK release hanya boleh dipasang dengan `adb -s <serial> install -r` (upgrade in-place), dan verifikasi visual memakai `adb -s <serial> exec-out screencap -p`.
+4. Tes instrumented di HP fisik hanya boleh berjalan setelah build debug memakai `applicationIdSuffix = ".debug"` beserta authority FileProvider dan deep link yang ikut terpisah, sehingga aplikasi harian owner tetap terisolasi. Sebelum itu, tes instrumented dijalankan di emulator.
 
 ## Handoff `i-have-adhd`
 

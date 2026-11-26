@@ -32,7 +32,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -192,7 +191,7 @@ private fun DateSpinner(day: LocalDate, today: LocalDate, selectDay: (LocalDate)
     Column(modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
             MonthPicker(YearMonth.from(day)) { month -> navigateTo(month.atDay(day.dayOfMonth.coerceAtMost(month.lengthOfMonth()))) }
-            FilledTonalButton(onClick = { navigateTo(today) }) { Text("Hari Ini") }
+            FilledTonalButton(onClick = { navigateTo(today) }, border = BorderStroke(1.dp, colors.outline)) { Text("Hari Ini") }
         }
         BoxWithConstraints(Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
             val cellWidth = 56.dp.coerceAtMost(maxWidth)
@@ -229,7 +228,7 @@ private fun DateSpinner(day: LocalDate, today: LocalDate, selectDay: (LocalDate)
                                 contentDescription = SpinnerDateFormat.format(date) + if (date == today) ", hari ini" else ""
                             },
                         shape = RoundedCornerShape(14.dp),
-                        border = if (isSelected) null else BorderStroke(1.dp, colors.outlineVariant),
+                        border = if (isSelected) null else BorderStroke(1.dp, colors.outline),
                         color = if (isSelected) colors.primary else Color.Transparent,
                         contentColor = if (isSelected) colors.onPrimary else colors.onSurface,
                     ) {
@@ -271,7 +270,7 @@ private fun TimelineEntry(row: TimelineRow, start: Long, end: Long, now: Long, z
             Text(if (row.end >= end) "24:00" else formatTime(row.end, zone), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Box(Modifier.padding(end = 10.dp).width(1.dp).height(100.dp).background(MaterialTheme.colorScheme.outlineVariant))
-        Surface(Modifier.weight(1f), shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+        NeuCard(Modifier.weight(1f), radius = 18.dp) {
             Column {
                 val colors = MaterialTheme.colorScheme
                 val banner = when {
@@ -323,33 +322,38 @@ internal fun SettingsScreen(
 ) {
     val profile = workspace.profile
     LazyColumn(contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp)) {
+        // Each settings group is one raised card on the canvas, in the same order as before.
         item {
-            ThemeSetting(theme, setTheme)
-            HorizontalDivider(modifier = Modifier.padding(vertical = 14.dp))
-            DailyBriefingSetting(permissionRefresh, requestNotifications)
-            HorizontalDivider(modifier = Modifier.padding(vertical = 14.dp))
-            ReleaseUpdateSetting()
-            HorizontalDivider(modifier = Modifier.padding(vertical = 14.dp))
-            OutlinedButton(onClick = openFocusSettings) { Text("Pengaturan fokus") }
-            HorizontalDivider(modifier = Modifier.padding(vertical = 14.dp))
+            SettingsCard { ThemeSetting(theme, setTheme) }
+            SettingsCard { DailyBriefingSetting(permissionRefresh, requestNotifications) }
+            SettingsCard { ReleaseUpdateSetting() }
+            SettingsCard { OutlinedButton(onClick = openFocusSettings) { Text("Pengaturan fokus") } }
             state.cloudStatus?.let { status ->
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("Sinkronisasi cloud", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
-                    Text(status, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    OutlinedButton(onClick = model::syncNow, enabled = !state.cloudSyncing) { Text("Sinkronkan sekarang") }
+                SettingsCard {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Sinkronisasi cloud", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
+                        Text(status, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        OutlinedButton(onClick = model::syncNow, enabled = !state.cloudSyncing) { Text("Sinkronkan sekarang") }
+                    }
                 }
-                HorizontalDivider(modifier = Modifier.padding(vertical = 14.dp))
             }
-            ProfileForm(profile, state.busy, model)
+            SettingsCard { ProfileForm(profile, state.busy, model) }
         }
         item {
-            HorizontalDivider(modifier = Modifier.padding(top = 18.dp, bottom = 14.dp))
-            CourseColorSetting(remember(workspace.tasks) { TaskSearch.courses(workspace.tasks.map { it.course }) },
-                model::chooseCourseColor)
-            HorizontalDivider(modifier = Modifier.padding(vertical = 14.dp))
-            DataBackupSetting(state.busy, model)
-            AccountSettings(state, model, Modifier.padding(top = 24.dp, bottom = 16.dp))
+            SettingsCard {
+                CourseColorSetting(remember(workspace.tasks) { TaskSearch.courses(workspace.tasks.map { it.course }) },
+                    model::chooseCourseColor)
+            }
+            SettingsCard { DataBackupSetting(state.busy, model) }
+            SettingsCard { AccountSettings(state, model) }
         }
+    }
+}
+
+@Composable
+private fun SettingsCard(content: @Composable () -> Unit) {
+    NeuCard(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+        Column(Modifier.padding(18.dp)) { content() }
     }
 }
 

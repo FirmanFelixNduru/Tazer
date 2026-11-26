@@ -1,5 +1,8 @@
 package com.tazer.taskorganizer.ui
 
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.draw.clip
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.net.Uri
@@ -35,14 +38,12 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -92,16 +93,22 @@ import kotlinx.coroutines.withContext
 
 private val shortDays = listOf("Sen", "Sel", "Rab", "Kam", "Jum", "Sab", "Min")
 
-/** The single entry point on Jadwal: one + button that offers an event or a weekly schedule. */
+/** The single entry point, on Kalender: a royal-blue + squircle that offers an event or a weekly schedule. */
 @Composable
-internal fun ScheduleAddButton(openEvents: () -> Unit, openFixed: () -> Unit) {
+internal fun ScheduleAddButton(openEvents: () -> Unit, openFixed: () -> Unit, enabled: Boolean = true) {
     var open by remember { mutableStateOf(false) }
+    val neu = neu()
     Box {
-        FloatingActionButton(
-            onClick = { open = true },
-            modifier = Modifier.semantics { contentDescription = "Tambah ke jadwal" },
-        ) { TazerIcon(TazerGlyph.Add) }
-        DropdownMenu(open, { open = false }) {
+        NeuAccentSquircle(
+            Modifier.clip(RoundedCornerShape(16.dp))
+                .clickable(enabled = enabled, role = Role.Button, onClick = { open = true })
+                .semantics { contentDescription = "Tambah ke jadwal" },
+            size = 52.dp,
+        ) { CompositionLocalProvider(LocalContentColor provides neu.onAccent) { TazerIcon(TazerGlyph.Add) } }
+        DropdownMenu(
+            open, { open = false }, shape = RoundedCornerShape(18.dp), containerColor = neu.surface,
+            border = BorderStroke(1.dp, neu.outline.copy(alpha = .5f)),
+        ) {
             DropdownMenuItem(
                 text = { Text("Tambah Acara") },
                 leadingIcon = { TazerIcon(TazerGlyph.Calendar) },
@@ -125,15 +132,14 @@ private fun PageHeading(detail: String) {
 
 @Composable
 private fun FormCard(content: @Composable () -> Unit) {
-    Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+    NeuCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { content() }
     }
 }
 
 @Composable
 private fun SavedCard(title: String, detail: String, marker: Color?, tag: String?, onEdit: () -> Unit, onDelete: () -> Unit, enabled: Boolean) {
-    Surface(Modifier.fillMaxWidth().padding(vertical = 5.dp), shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerLow) {
+    NeuCard(Modifier.fillMaxWidth().padding(vertical = 7.dp)) {
         Row(Modifier.padding(start = 16.dp, top = 10.dp, bottom = 10.dp, end = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             if (marker != null) Box(Modifier.size(12.dp).background(marker, CircleShape))
             Column(Modifier.weight(1f).padding(start = if (marker != null) 12.dp else 0.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -141,8 +147,8 @@ private fun SavedCard(title: String, detail: String, marker: Color?, tag: String
                 Text(detail, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (tag != null) Text(tag, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            IconButton(onClick = onEdit, enabled = enabled) { TazerIcon(TazerGlyph.Edit, "Edit $title") }
-            IconButton(onClick = onDelete, enabled = enabled) { TazerIcon(TazerGlyph.Delete, "Hapus $title") }
+            NeuIconAction(TazerGlyph.Edit, "Edit $title", enabled, onEdit)
+            NeuIconAction(TazerGlyph.Delete, "Hapus $title", enabled, onDelete)
         }
     }
 }
@@ -171,7 +177,8 @@ internal fun EventsPage(
     val today = localDate(state.now, zone)
     LazyColumn(contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { PageHeading("Acara sekali atau beberapa hari tampil di Kalender dan Jadwal, lalu ikut Cloud Sync.") }
-        item(key = editing?.id ?: "new") { EventForm(editing, today, state.busy, model) { setEditId(null) } }
+        // Prefixed so the form never shares a key with the same event in the saved list below.
+        item(key = "form-" + (editing?.id ?: "new")) { EventForm(editing, today, state.busy, model) { setEditId(null) } }
         item {
             Text("Acara tersimpan", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
             if (workspace.events.isEmpty()) Text("Belum ada acara.", color = MaterialTheme.colorScheme.onSurfaceVariant)

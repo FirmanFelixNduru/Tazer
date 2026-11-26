@@ -1,5 +1,7 @@
 package com.tazer.taskorganizer.ui
 
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.runtime.CompositionLocalProvider
 import android.content.Intent
 import android.os.PowerManager
 import android.provider.Settings
@@ -24,7 +26,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -144,12 +145,10 @@ internal fun FocusScreen(
         }
         val colors = MaterialTheme.colorScheme
         if (active || session.state == WorkSessionState.PENDING) {
-            Surface(
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp),
-                color = if (session.state == WorkSessionState.PAUSED || overtime) colors.tertiaryContainer else colors.surfaceContainer,
-                contentColor = if (session.state == WorkSessionState.PAUSED || overtime) colors.onTertiaryContainer else colors.onSurface,
-                shape = MaterialTheme.shapes.large,
-            ) {
+            val alert = session.state == WorkSessionState.PAUSED || overtime
+            NeuCard(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 6.dp), radius = 26.dp,
+                fill = if (alert) colors.tertiaryContainer else null) {
+                CompositionLocalProvider(LocalContentColor provides if (alert) colors.onTertiaryContainer else colors.onSurface) {
                 Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         TazerIcon(TazerGlyph.Timer)
@@ -157,6 +156,7 @@ internal fun FocusScreen(
                     }
                     Text(session.timerText(clock, overtime),
                         style = MaterialTheme.typography.displayMedium.copy(fontFeatureSettings = "tnum"))
+                }
                 }
             }
         } else Text(status, style = MaterialTheme.typography.titleMedium, color = colors.onSurfaceVariant)

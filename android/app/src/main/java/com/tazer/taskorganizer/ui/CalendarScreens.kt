@@ -52,6 +52,7 @@ private fun MonthPicker(month: YearMonth, modifier: Modifier, contentPadding: Pa
         onClick = { pickerOpen = true },
         modifier = modifier.testTag("calendar-month-picker"),
         contentPadding = contentPadding,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
     ) {
         Text(monthLabel.format(month), textAlign = TextAlign.Center)
     }
@@ -98,6 +99,7 @@ private data class AgendaItem(
 @Composable
 internal fun CalendarScreen(
     workspace: Workspace, state: TazerState, zone: ZoneId, model: TazerViewModel, openEvents: (String?) -> Unit,
+    openFixed: () -> Unit,
 ) {
     val today = localDate(state.now, zone)
     var selected by rememberSaveable { mutableLongStateOf(today.toEpochDay()) }
@@ -149,13 +151,10 @@ internal fun CalendarScreen(
                     onClick = { selected = today.toEpochDay() },
                     modifier = Modifier.weight(1f).fillMaxHeight().testTag("calendar-today"),
                     contentPadding = calendarHeaderPadding,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
                 ) { Text("Hari Ini", textAlign = TextAlign.Center) }
-                IconButton(onClick = { selected = month.minusMonths(1).atDay(1).toEpochDay() }) {
-                    TazerIcon(TazerGlyph.Previous, "Bulan sebelumnya")
-                }
-                IconButton(onClick = { selected = month.plusMonths(1).atDay(1).toEpochDay() }) {
-                    TazerIcon(TazerGlyph.Next, "Bulan berikutnya")
-                }
+                NeuIconAction(TazerGlyph.Previous, "Bulan sebelumnya") { selected = month.minusMonths(1).atDay(1).toEpochDay() }
+                NeuIconAction(TazerGlyph.Next, "Bulan berikutnya") { selected = month.plusMonths(1).atDay(1).toEpochDay() }
             }
             Row(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
                 dayLabels.forEach { label ->
@@ -171,7 +170,8 @@ internal fun CalendarScreen(
         item {
             Row(Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(DayFormat.format(day), Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
-                FilledTonalButton(onClick = { openEvents(null) }, enabled = !state.busy) { Text("Tambah acara") }
+                // The + menu replaces the old "Tambah acara" button: Tambah Acara or Jadwal Tetap.
+                ScheduleAddButton(openEvents = { openEvents(null) }, openFixed = openFixed, enabled = !state.busy)
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 ExportIcsButton(model)
@@ -190,7 +190,7 @@ internal fun CalendarScreen(
                 },
                 leadingContent = { Text(item.time, style = MaterialTheme.typography.labelMedium) },
                 trailingContent = when {
-                    item.event != null -> ({ IconButton(onClick = { openEvent(item.event) }) { TazerIcon(TazerGlyph.Edit, "Edit " + item.title) } })
+                    item.event != null -> ({ NeuIconAction(TazerGlyph.Edit, "Edit " + item.title) { openEvent(item.event) } })
                     item.session?.let { it.state in ActiveFocusStates || it.state == WorkSessionState.PENDING && day == today && it.plannedEndAt > state.now } == true ->
                         ({ TimerIconButton("Buka timer") { model.openFocus(requireNotNull(item.session)) } })
                     else -> null
