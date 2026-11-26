@@ -27,9 +27,6 @@ data class SchedulePlan(val sessions: List<PlannedWork>, val risks: List<Deadlin
 
 object Scheduler {
     internal const val MINUTE_MS = 60_000L
-    private const val MIN_FOCUS = 25
-    internal const val MAX_FOCUS = 50
-    internal const val BREAK_MS = 10 * MINUTE_MS
     private const val HORIZON_DAYS = 7L
 
     fun priorityScore(task: SchedulingTask, now: Long): Int {
@@ -59,13 +56,14 @@ object Scheduler {
         now: Long,
         busyUntilAt: Long? = null,
         reserved: List<TimeBlock> = emptyList(),
+        preset: FocusPreset = FocusPreset.DEFAULT,
     ): SchedulePlan {
         val work = rankedWork(tasks, now)
         if (work.isEmpty()) return SchedulePlan(emptyList(), emptyList())
 
         val startAt = maxOf(now, busyUntilAt ?: now)
         val slots = freeSlots(rules, zone, activeStartMinute, activeEndMinute, startAt, reserved)
-        val sessions = allocate(work, slots)
+        val sessions = allocate(work, slots, preset)
         val risks = work.mapNotNull { item ->
             val missing = if (item.task.deadlineAt <= now) item.task.remainingMinutes else item.remaining
             DeadlineRisk(item.task.id, missing).takeIf { missing > 0 }
@@ -151,7 +149,7 @@ object Scheduler {
         if (start < end) add(TimeBlock(start * MINUTE_MS, end * MINUTE_MS))
     }
 
-    private fun allocate(work: List<Work>, slots: List<TimeBlock>): List<PlannedWork> = buildList {
+    private fun allocate(work: List<Work>, slots: List<TimeBlock>, preset: FocusPreset): List<PlannedWork> = buildList {
         assignQuotas(work, slots.sumOf { (it.endAt - it.startAt) / MINUTE_MS })
         var nextFocusAt = Long.MIN_VALUE
         var recalculate = false
@@ -161,16 +159,16 @@ object Scheduler {
             while (cursor < slot.endAt) {
                 val options = work.mapNotNull { item ->
                     val available = availableMinutes(item, cursor, slot.endAt)
-                    val minutes = chunkMinutes(item.remaining, available)
+                    val minutes = chunkMinutes(item.remaining, available, preset)
                     Option(item, available, minutes).takeIf { minutes > 0 }
                 }
                 if (options.isEmpty()) break
 
-                if (recalculate) redistribute(work, remainingSlots, cursor)
-                var preferred = withinQuota(options, remainingSlots, cursor)
+                if (recalculate) redistribute(work, remainingSlots, cursor, preset)
+                var preferred = withinQuota(options, remainingSlots, cursor, preset)
                 if (preferred == null && !recalculate) {
-                    redistribute(work, remainingSlots, cursor)
-                    preferred = withinQuota(options, remainingSlots, cursor)
+                    redistribute(work, remainingSlots, cursor, preset)
+                    preferred = withinQuota(options, remainingSlots, cursor, preset)
                 }
                 val chosen = preservePriority(options, preferred ?: options.first(), remainingSlots)
                 val item = chosen.work
@@ -182,23 +180,23 @@ object Scheduler {
                 item.remaining -= chosen.minutes
                 if (work.all { it.remaining == 0 }) return@buildList
 
-                nextFocusAt = endAt + BREAK_MS
+                nextFocusAt = endAt + preset.breakMs
                 cursor = nextFocusAt
             }
         }
     }
 
-    private fun withinQuota(options: List<Option>, slots: List<TimeBlock>, cursor: Long): Option? {
+    private fun withinQuota(options: List<Option>, slots: List<TimeBlock>, cursor: Long, preset: FocusPreset): Option? {
         val affordable = options.mapNotNull { option ->
             val item = option.work
-            val minutes = chunkMinutes(item.remaining, minOf(option.available, item.quota))
+            val minutes = chunkMinutes(item.remaining, minOf(option.available, item.quota), preset)
             if (minutes > 0) option.copy(minutes = minutes) else null
         }
         val rankedFirst = affordable.firstOrNull() ?: return null
-        val nextFocusAt = cursor + rankedFirst.minutes * MINUTE_MS + BREAK_MS
+        val nextFocusAt = cursor + rankedFirst.minutes * MINUTE_MS + preset.breakMs
         return affordable.filter { option ->
             val item = option.work
-            val minimum = minOf(MIN_FOCUS, item.remaining) * MINUTE_MS
+            val minimum = minOf(preset.minimumMinutes, item.remaining) * MINUTE_MS
             val next = slots.asSequence().drop(1).firstOrNull { it.endAt - maxOf(it.startAt, nextFocusAt) >= minimum }
             if (next != null) item.cutoff < maxOf(next.startAt, nextFocusAt) + minimum
             else item.cutoff <= slots.last().endAt
@@ -224,11 +222,11 @@ object Scheduler {
         }
     }
 
-    private fun redistribute(work: List<Work>, slots: List<TimeBlock>, cursor: Long) {
+    private fun redistribute(work: List<Work>, slots: List<TimeBlock>, cursor: Long, preset: FocusPreset) {
         for (item in work) item.quota = 0
         val eligible = work.filter { item ->
             slots.any { slot ->
-                chunkMinutes(item.remaining, availableMinutes(item, maxOf(cursor, slot.startAt), slot.endAt)) > 0
+                chunkMinutes(item.remaining, availableMinutes(item, maxOf(cursor, slot.startAt), slot.endAt), preset) > 0
             }
         }
         val capacity = slots.sumOf { slot ->
@@ -236,7 +234,7 @@ object Scheduler {
             // Count the shared window once, up to the latest usable deadline in this slot.
             eligible.maxOfOrNull { item ->
                 val available = availableMinutes(item, startAt, slot.endAt)
-                if (chunkMinutes(item.remaining, available) > 0) available.toLong() else 0L
+                if (chunkMinutes(item.remaining, available, preset) > 0) available.toLong() else 0L
             } ?: 0L
         }
         assignQuotas(eligible, capacity)
@@ -276,12 +274,13 @@ object Scheduler {
         return if (startAt < cutoff) ((cutoff - startAt) / MINUTE_MS).toInt() else 0
     }
 
-    internal fun chunkMinutes(remaining: Int, available: Int): Int {
-        val longest = minOf(remaining, available, MAX_FOCUS)
-        if (longest < minOf(MIN_FOCUS, remaining)) return 0
-        if (longest == remaining || remaining - longest >= MIN_FOCUS) return longest
-        val withoutShortTail = remaining - MIN_FOCUS
-        return if (withoutShortTail >= MIN_FOCUS) withoutShortTail else longest
+    internal fun chunkMinutes(remaining: Int, available: Int, preset: FocusPreset = FocusPreset.DEFAULT): Int {
+        val longest = minOf(remaining, available, preset.workMinutes)
+        val minimum = preset.minimumMinutes
+        if (longest < minOf(minimum, remaining)) return 0
+        if (longest == remaining || remaining - longest >= minimum) return longest
+        val withoutShortTail = remaining - minimum
+        return if (withoutShortTail >= minimum) withoutShortTail else longest
     }
 
     private fun rankedWork(tasks: List<SchedulingTask>, now: Long): List<Work> = tasks.asSequence()

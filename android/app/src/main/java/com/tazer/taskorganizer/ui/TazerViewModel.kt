@@ -11,6 +11,7 @@ import com.tazer.taskorganizer.data.CloudSync
 import com.tazer.taskorganizer.data.FixedSchedule
 import com.tazer.taskorganizer.data.FixedScheduleKind
 import com.tazer.taskorganizer.data.FocusChange
+import com.tazer.taskorganizer.data.IcsImportPreview
 import com.tazer.taskorganizer.data.Subtask
 import com.tazer.taskorganizer.data.SubtaskDraft
 import com.tazer.taskorganizer.data.SubtaskRepository
@@ -36,6 +37,7 @@ import com.tazer.taskorganizer.integration.TaskAnalysisInput
 import com.tazer.taskorganizer.timer.FocusLink
 import com.tazer.taskorganizer.timer.FocusLinkKind
 import com.tazer.taskorganizer.timer.FocusRuntime
+import java.io.InputStream
 import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
@@ -241,6 +243,11 @@ class TazerViewModel internal constructor(
         }
     }
 
+    fun refreshPlan() {
+        val uid = _state.value.uid ?: return
+        viewModelScope.launch { rebuild(uid) }
+    }
+
     fun startFocus(session: WorkSession) = focusAction("Mulai sesi tidak tersedia. Periksa jadwal terbaru.") { uid ->
         focus.start(uid, session.id, session.revision)
             .also { if (it?.active == null && it?.plan != null) showMessage("Sesi dipindahkan. Buka Jadwal untuk melihat waktu baru.") }
@@ -410,6 +417,32 @@ class TazerViewModel internal constructor(
     }
 
     fun deleteFixed(schedule: FixedSchedule) = change { uid -> repository.deleteFixedSchedule(uid, schedule.id) }
+
+    internal suspend fun previewIcs(ownerUid: String, open: () -> InputStream): IcsImportPreview {
+        require(_state.value.uid == ownerUid)
+        return calendar.previewIcs(ownerUid, open)
+    }
+
+    internal fun importIcs(preview: IcsImportPreview, close: () -> Unit) = runAction {
+        val uid = _state.value.uid
+        val counts = try {
+            require(uid == preview.ownerUid)
+            calendar.importIcs(preview.ownerUid, preview)
+        } catch (failure: CancellationException) {
+            throw failure
+        } catch (_: IllegalArgumentException) {
+            close()
+            showMessage("Akun atau zona waktu telah berubah. Pilih kembali file .ics.")
+            return@runAction
+        } catch (_: Exception) {
+            close()
+            showMessage("Impor .ics belum tersimpan. Coba lagi.")
+            return@runAction
+        }
+        close()
+        showMessage("${counts.events} acara dan ${counts.weeklyBlocks} blok jadwal tetap diimpor. ${counts.duplicates} duplikat dilewati.")
+        if (counts.weeklyBlocks > 0) rebuild(preview.ownerUid)
+    }
 
     fun saveByok(provider: ByokProvider, model: String, key: String, onSaved: () -> Unit) = runAction {
         integration.saveByok(provider, model, key)

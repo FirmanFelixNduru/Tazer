@@ -5,6 +5,8 @@ import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.tazer.taskorganizer.domain.FocusMoment
+import com.tazer.taskorganizer.domain.FocusPreset
+import com.tazer.taskorganizer.domain.FocusPresetMode
 import java.time.Instant
 import java.util.UUID
 import kotlinx.coroutines.async
@@ -484,6 +486,32 @@ class TaskRepositoryTest {
         val resume = focusMoment("11:00", 180)
         val resumed = repository.resumeFocus("alice", paused.id, paused.revision, resume)!!.active!!
         assertEquals(resume.elapsedMs + minutes(5), resumed.cutoffElapsedMs)
+    }
+
+    @Test
+    fun switchingPresetPreservesRunningAndPausedCountdownAndChangesNewBlocks() = runBlocking {
+        var preset = FocusPreset.DEFAULT
+        val withPreset = TaskRepository(database) { uid -> if (uid == "alice") preset else FocusPreset.DEFAULT }
+        val task = addFocusTask("alice", estimate = 100)
+        val started = focusMoment("09:00", 60)
+        val draft = withPreset.rebuildPlan("alice", started.wallMs).sessions.first()
+        val pending = withPreset.pendingFocus("alice").first()
+        assertEquals(50, draft.minutes)
+        val running = withPreset.startFocus("alice", pending.id, pending.revision, started)!!.active!!
+
+        preset = FocusPreset(FocusPresetMode.POMODORO)
+        withPreset.rebuildPlan("alice", wall("09:10"))
+        assertEquals(started.elapsedMs + minutes(50), withPreset.activeFocus("alice")?.cutoffElapsedMs)
+
+        val pause = focusMoment("09:10", 70)
+        val paused = withPreset.pauseFocus("alice", running.id, running.revision, pause)!!.active!!
+        assertEquals(minutes(40), paused.pausedRemainingMs)
+        val resume = focusMoment("09:11", 71)
+        val resumed = withPreset.resumeFocus("alice", paused.id, paused.revision, resume)!!.active!!
+        assertEquals(resume.elapsedMs + minutes(40), resumed.cutoffElapsedMs)
+        val following = withPreset.pendingFocus("alice").filter { it.taskId == task.id }
+        assertEquals(listOf(25, 25), following.map { it.plannedMinutes })
+        assertEquals(listOf(wall("09:56"), wall("10:26")), following.map { it.plannedStartAt })
     }
 
     @Test

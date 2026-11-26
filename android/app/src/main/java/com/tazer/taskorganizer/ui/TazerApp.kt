@@ -107,8 +107,8 @@ private val NightColors = darkColorScheme(
     outlineVariant = Color(0xFF40564A),
 )
 
-private val Sections = listOf("Tugas", "Jadwal", "Kalender", "Pengaturan")
-private val SectionGlyphs = listOf(TazerGlyph.Tasks, TazerGlyph.Timeline, TazerGlyph.Calendar, TazerGlyph.Settings)
+private val Sections = listOf("Tugas", "Jadwal", "Kalender", "Pengaturan", "Statistik")
+private val SectionGlyphs = listOf(TazerGlyph.Tasks, TazerGlyph.Timeline, TazerGlyph.Calendar, TazerGlyph.Settings, TazerGlyph.Statistics)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -252,15 +252,18 @@ private fun WorkspaceScreen(
                     1 -> TimelineScreen(
                         workspace, state, zone, viewDay?.let(java.time.LocalDate::parse) ?: localDate(state.now, zone),
                         { viewDay = it.toString() }, model::openFocus, { deferDialog = true }, { permissionDialog = true },
+                        model.focus.focusSettings().preset,
                     )
                     2 -> sectionState.SaveableStateProvider("calendar") { CalendarScreen(workspace, state, zone, model) }
-                    3 -> SettingsScreen(workspace, state, model, theme, setTheme)
+                    3 -> SettingsScreen(workspace, state, model, theme, setTheme) { permissionDialog = true }
+                    4 -> sectionState.SaveableStateProvider("statistics") { StatisticsScreen(workspace, state, zone) }
                 }
             }
         }
     }
     if (deferDialog) DeferFocusDialog(zone, state.busy, model) { deferDialog = false }
-    if (permissionDialog) FocusPermissionsDialog(model.focus, permissionRefresh, launch, requestNotifications) { permissionDialog = false }
+    if (permissionDialog) FocusPermissionsDialog(model.focus, permissionRefresh, launch, requestNotifications,
+        onPresetSaved = model::refreshPlan, close = { permissionDialog = false })
 }
 
 @Composable
@@ -305,7 +308,7 @@ internal fun TimerIconButton(label: String, onClick: () -> Unit) {
     ) { TazerIcon(TazerGlyph.Timer, label) }
 }
 
-internal enum class TazerGlyph { Tasks, Timeline, Calendar, Settings, Timer, Previous, Next, Down, Edit, Delete, Check, Add }
+internal enum class TazerGlyph { Tasks, Timeline, Calendar, Settings, Statistics, Timer, Previous, Next, Down, Edit, Delete, Check, Add }
 
 @Composable
 internal fun TazerIcon(glyph: TazerGlyph, description: String? = null) {
@@ -329,6 +332,12 @@ internal fun TazerIcon(glyph: TazerGlyph, description: String? = null) {
                 line(.31f, .15f, .31f, .3f)
                 line(.69f, .15f, .69f, .3f)
                 line(.16f, .42f, .84f, .42f)
+            }
+            TazerGlyph.Statistics -> {
+                line(.17f, .81f, .84f, .81f)
+                line(.28f, .67f, .28f, .51f)
+                line(.50f, .67f, .50f, .28f)
+                line(.72f, .67f, .72f, .17f)
             }
             TazerGlyph.Settings -> {
                 line(.15f, .29f, .85f, .29f)

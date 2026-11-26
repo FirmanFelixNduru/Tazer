@@ -5,6 +5,7 @@ import java.time.LocalDate
 import java.time.ZoneId
 import kotlin.random.Random
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -107,6 +108,41 @@ class SchedulerTest {
             plan.sessions,
         )
         assertTrue(plan.risks.isEmpty())
+    }
+
+    @Test
+    fun defaultPresetRetainsLegacyBlocksAndBreak() {
+        val tasks = listOf(task("task", 100, deadline = at(110)))
+        val legacy = dayPlan(tasks, 0, 110)
+        assertEquals(
+            listOf(PlannedWork("task", at(0), at(50), 50), PlannedWork("task", at(60), at(110), 50)),
+            legacy.sessions,
+        )
+        assertEquals(legacy, dayPlan(tasks, 0, 110, preset = FocusPreset(FocusPresetMode.DEEP_WORK)))
+    }
+
+    @Test
+    fun pomodoroUsesFixedGapAsPartialBreakAndHonorsDeadline() {
+        val plan = dayPlan(
+            listOf(task("task", 76, deadline = at(84))), 0, 100,
+            rules = listOf(rule("fixed", 25, 28)), preset = FocusPreset(FocusPresetMode.POMODORO),
+        )
+        assertEquals(listOf(25, 25), plan.sessions.map { it.minutes })
+        assertEquals(listOf(at(0), at(30)), plan.sessions.map { it.startAt })
+        assertEquals(listOf(DeadlineRisk("task", 26)), plan.risks)
+    }
+
+    @Test
+    fun customValidatesBoundsAndSupportsCapsBelowAndAboveLegacy() {
+        val minimum = FocusPreset(FocusPresetMode.CUSTOM, 15, 1)
+        val maximum = FocusPreset(FocusPresetMode.CUSTOM, 120, 30)
+        val tasks = listOf(task("task", 151))
+        assertEquals(listOf(15, 15), dayPlan(tasks, 0, 31, preset = minimum).sessions.map { it.minutes })
+        val plan = dayPlan(tasks, 0, 181, preset = maximum)
+        assertEquals(listOf(120, 31), plan.sessions.map { it.minutes })
+        assertEquals(listOf(at(0), at(150)), plan.sessions.map { it.startAt })
+        assertThrows(IllegalArgumentException::class.java) { FocusPreset(FocusPresetMode.CUSTOM, 14, 1) }
+        assertThrows(IllegalArgumentException::class.java) { FocusPreset(FocusPresetMode.CUSTOM, 120, 31) }
     }
 
     @Test
@@ -281,9 +317,10 @@ class SchedulerTest {
         rules: List<ScheduleRule> = emptyList(),
         reserved: List<TimeBlock> = emptyList(),
         busyUntilAt: Long? = null,
+        preset: FocusPreset = FocusPreset.DEFAULT,
     ): SchedulePlan = Scheduler.plan(
         tasks, rules, utc, activeStart, activeEnd, now, busyUntilAt,
-        reserved + block(1440, 10_080),
+        reserved + block(1440, 10_080), preset,
     )
 
     private fun task(id: String, minutes: Int, deadline: Long = at(13_000), difficulty: Int = 3) =

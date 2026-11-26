@@ -55,6 +55,13 @@ Supabase Free menyediakan Auth dan PostgreSQL. Android memakai email/password de
 4. Urutan sync meliputi pull, kirim batch antrean, lalu pull hasil terbaru. Retry idempoten. ACK hanya menghapus status dirty untuk pasangan versi/writer yang dikirim. Impor dan cursor disimpan atomik. Anggota aplikasi dapat memicu sinkronisasi di Pengaturan, dan antrean dicoba lagi setelah koneksi tervalidasi kembali atau saat aplikasi dibuka lagi. Akun tidak perlu tier PRO untuk sinkronisasi.
 5. `PENDING`, `DONE`, dan `CANCELLED` mereplikasi rencana dan riwayat durasi aktual. Timer aktif/dijeda, revisi notifikasi, dan checkpoint monotonic dikelola perangkat yang memulainya. Perubahan cloud yang akan menimpa sesi itu atau tugasnya diambil setelah sesi ditutup. Profil, tugas, dan blok rutin yang diimpor memicu perencanaan ulang di perangkat.
 
+### Impor iCalendar
+
+1. Kalender dan Jadwal Tetap membuka dokumen melalui Android Storage Access Framework. Parsing dan pratinjau memakai file lokal. Simpan setelah konfirmasi per akun.
+2. Baca `VEVENT` beserta UID, judul, awal, akhir, lokasi dan deskripsi. Buka lipatan baris dan dekode escape teks iCalendar. Normalisasi waktu UTC atau `TZID` ke zona profil. Tanggal akhir all-day iCalendar eksklusif dan dikonversi ke tanggal akhir inklusif Room. Jam satu kali mengikuti tanggal sipil profil.
+3. Pola mingguan tak berbatas yang dapat direpresentasikan oleh hari dan menit dalam satu pekan masuk Jadwal Tetap dan berlaku setelah diimpor. Pola dengan `COUNT` atau `UNTIL` diperluas menjadi acara Kalender jika masih dalam batas 512 kemunculan. Kalender menyimpan lokasi dan deskripsi di catatan acara. Jadwal Tetap menyimpan judul dan panjang blok. Pratinjau memisahkan kedua tujuan dan memperlihatkan acara yang dilewati, termasuk aturan pengecualian dan zona yang memerlukan definisi khusus atau punya offset relatif berubah.
+4. Identitas impor diturunkan dari pemilik, UID dan kemunculan. Impor ulang melewati baris yang sudah ada dan mempertahankan edit lokal. Komit melalui tabel Room yang sama agar jurnal Cloud Sync meneruskan perubahan sesuai RLS. Skema Room tetap v4.
+
 ### Analyzer
 
 Input memiliki `title` dan `course` 1–120 karakter setelah trim, `description` 0–4000 karakter, serta `deadlineAt` RFC 3339 UTC. Batas body 32 KiB. Deadline lampau boleh dianalisis.

@@ -12,6 +12,10 @@ Estimasi baru dikalibrasi dengan median `jumlah actualWorkMs / (baselineMinutes 
 
 Widget memilih sesi aktif untuk UID terpilih atau sesi PENDING tersisa pada hari sipil profil. Countdown memakai chronometer platform dan cutoff monotonic; PAUSED memakai durasi beku. Aksi membuka tautan Focus Timer yang tunduk pada token dan revisi sesi, atau Jadwal saat tidak ada sesi. Widget menghapus isi lama saat UID berganti dan mengikuti pilihan tema yang berlaku.
 
+## Statistik mingguan
+
+Gunakan tujuh tanggal sipil berakhir pada hari yang dipilih dalam zona profil, dengan default hari ini. Jumlahkan `actualWorkMs` dari sesi selesai yang pernah dimulai dan kaitkan ke hari berakhir. Kelompokkan durasi per mata kuliah. Hitung semua tugas yang selesai dalam rentang, termasuk yang belum punya sesi aktual. Akurasi memakai `100 × max(0, 1 − rata-rata(abs(aktual / estimasiAwal − 1)))` untuk tugas selesai dengan aktual tercatat. Ringkasan pace memakai guardrail kalibrasi yang sama. Streak menghitung tanggal berturut-turut dengan minimal satu tugas yang selesai sebelum atau tepat pada deadline. Untuk hari ini yang masih berjalan, streak dapat mulai dari kemarin.
+
 ## Priority Ranking Engine
 
 ```text
@@ -27,9 +31,13 @@ Gunakan rasio terhadap waktu kalender untuk ranking. Hitung kelayakan berdasarka
 ## Slot kosong dan batas sesi
 
 1. Bentuk jam aktif untuk tujuh tanggal lokal mulai dari tanggal `max(now,busyUntilAt)` dan potong rentang pertama pada waktu itu. Gunakan interval setengah terbuka `[start,end)`. Untuk jam lokal dalam DST gap, geser sebesar gap. Saat jam berulang, gunakan offset lebih awal untuk awal interval dan offset lebih akhir untuk akhir interval. Gabungkan interval yang bertumpuk dan buang interval kosong.
-2. Potong union `FixedSchedule` termasuk makan, istirahat, ibadah, dan reservasi sesi yang dipertahankan. Bulatkan awal slot ke atas dan akhir ke bawah pada menit absolut. Pertahankan jeda 10 menit setelah sesi terjadwal sebelum sesi fokus berikutnya. Waktu yang telah kosong di antara dua slot, termasuk agenda tetap, dapat memenuhi sebagian atau seluruh jeda itu. Jeda boleh berakhir saat jam aktif tutup.
-3. Durasi sesi normal 25–50 menit. Izinkan blok 1–24 menit hanya untuk menyelesaikan seluruh sisa yang belum ditempatkan ketika sisa itu memang di bawah 25 menit. Jangan memecah sesi di batas jadwal tetap. Saat memilih panjang 25–50 menit, hindari menciptakan ekor di bawah 25 jika ada durasi legal yang menghasilkan `0` atau `>=25` menit sisa.
+2. Potong union `FixedSchedule` termasuk makan, istirahat, ibadah, dan reservasi sesi yang dipertahankan. Bulatkan awal slot ke atas dan akhir ke bawah pada menit absolut. Terapkan jeda preset setelah sesi terjadwal. Waktu kosong di antara dua slot, termasuk agenda tetap, dapat memenuhi sebagian atau seluruh jeda. Jeda boleh berakhir saat jam aktif tutup.
+3. Preset tersimpan di perangkat. Deep Work default memakai batas 50 menit fokus dan jeda 10 menit. Pomodoro memakai 25/5. Custom menerima fokus 15–120 dan jeda 1–30 menit. Minimum blok normal adalah 25 menit atau batas fokus jika lebih kecil. Izinkan ekor yang lebih singkat untuk menyelesaikan seluruh sisa. Saat memilih blok, hindari menciptakan ekor di bawah minimum bila ada durasi legal yang menghasilkan nol atau sisa di atas minimum.
 4. Task dengan deadline mendatang hanya mendapat sesi yang berakhir paling lambat pada deadline. Setelah lewat, task bisa dijadwalkan pada slot kosong berikutnya dengan label `OVERDUE`. Beri peringatan jika menit yang terjadwal sebelum deadline kurang dari sisa; untuk deadline di luar horizon, nyatakan cakupan rencana hingga akhir horizon. Refresh horizon pada hari baru, perubahan profil, atau pembukaan aplikasi ketika rencana perlu diperpanjang.
+
+## Do Not Disturb
+
+DND lokal dan default OFF. Android 10 ke atas meminta akses kebijakan bila user memilih opt-in. Saat hitung mundur RUNNING atau EXTENDED dimulai, catat filter sebelumnya dalam jurnal lokal dan aktifkan aturan alarm milik Tazer setelah service berjalan. Saat sesi dijeda, lembur, selesai, berhenti, atau dipulihkan tanpa hitung mundur aktif, tarik aturan Tazer agar Android menghitung ulang filter dari pengaturan user. Jika akses ditahan selama penarikan, pertahankan jurnal untuk rekonsiliasi saat akses kembali.
 
 ## Weighted Time Allocation
 
@@ -44,7 +52,7 @@ quota = boundedShares(min(C, sum(need)), weight, need)
 for each free slot in chronological order:
     cursor = first minute allowed by the slot and the preceding focus break
     while cursor is inside slot:
-        options = legal chunks of 1–50 min, bounded by unplaced need,
+        options = legal chunks up to preset focus cap, bounded by unplaced need,
                   slot end and each task's deadline eligibility
         if options is empty: break
         prefer chunks within each task's unspent quota
@@ -54,7 +62,7 @@ for each free slot in chronological order:
             choose highest rank with an eligible chunk and redistribute unused quota
         choose longest legal chunk for that task, avoiding a short tail when possible
         reserve the chunk; deduct its work minutes from unplaced need and quota
-        cursor = chunk end + 10 min
+        cursor = chunk end + preset break duration
 ```
 
 Untuk redistribusi, perlakukan menit sesi yang sudah dipesan sebagai tetap. Hitung kembali target sisa hanya untuk ruang dan task yang masih bisa ditempatkan, dengan bobot dan cap yang sama. Bila target hasil hitung masih di bawah minimum, berikan satu blok legal utuh mengikuti rank, lalu hitung kembali setelah blok ditempatkan. Untuk kondisi kelayakan yang sama, jika pemberian blok ke task berperingkat lebih rendah akan membuat totalnya melampaui task dengan skor lebih tinggi, utamakan blok yang legal untuk task berskor lebih tinggi. Porsi bisa menyimpang akibat cap sisa, blok minimum, jeda, deadline, atau reservasi sesi yang sudah dikunci. Luangkan slot untuk task lain jika ada kelayakan. Peringatan menunjukkan defisit menit pada rencana yang benar-benar dibuat; heuristik ini dapat memilih rencana berbeda dari optimasi global.
@@ -74,7 +82,7 @@ smartShift(sessionId, revision, extraMinutes, now):
     replace Task.remainingMinutes with extraMinutes  # sisa dari sekarang
     if current slot allows a legal focus block and duration before a hard boundary:
         start an EXTENDED segment capped by remaining continuous focus time and extraMinutes
-        reserve 10 min break before another focus block
+        reserve preset break before another focus block
     else:
         continuation starts in a future legal slot after the required break
     rebuild future PENDING sessions using shared weighted scheduler
@@ -89,7 +97,7 @@ dynamicReschedule(resumeAt, now):
     publish deadline-risk warnings
 ```
 
-Pada batas sesi, `Belum Selesai` membuka input `+15 mnt`, `+30 mnt`, `+1 jam`, atau custom. Nilai input merupakan sisa **dari waktu konfirmasi**, sehingga overtime sebelum konfirmasi tercatat sebagai aktual dan dapat memengaruhi estimasi yang dimasukkan user. Terapkan guardrail blok minimum dan deadline untuk extension. Kurangi batas 50 menit fokus kontinu dengan durasi aktual sejak jeda terakhir, termasuk overtime dan extension berurutan. Jika sisa jatah kontinu atau ruang sebelum jadwal tetap tidak cukup, antrekan lanjutan sesudah jeda pada slot legal. Overtime yang sedang diukur boleh melewati jadwal tetap jika user terus membiarkan timer berjalan. Rekam waktu aktual tersebut dan cegah perpanjangan yang direncanakan di dalam blok tetap.
+Pada batas sesi, `Belum Selesai` membuka input `+15 mnt`, `+30 mnt`, `+1 jam`, atau custom. Nilai input merupakan sisa **dari waktu konfirmasi**, sehingga overtime sebelum konfirmasi tercatat sebagai aktual dan dapat memengaruhi estimasi yang dimasukkan user. Terapkan guardrail blok minimum dan deadline untuk extension. Kurangi batas fokus kontinu dari preset dengan durasi aktual sejak jeda terakhir, termasuk overtime dan extension berurutan. Jika sisa jatah kontinu atau ruang sebelum jadwal tetap tidak cukup, antrekan lanjutan sesudah jeda pada slot legal. Overtime yang sedang diukur boleh melewati jadwal tetap jika user terus membiarkan timer berjalan. Rekam waktu aktual tersebut dan cegah perpanjangan yang direncanakan di dalam blok tetap.
 
 Pada dynamic reschedule, pertahankan histori aktual dan task `DONE`, termasuk timestamp selesai. Shift dan dynamic reschedule membatalkan dan mengganti `PENDING` dalam satu transaksi, mempertahankan sesi yang sudah ditutup, serta mengembalikan daftar alarm yang harus diselaraskan. Segmen extension yang dibuat oleh transaksi adalah reservasi aktif dan diperhitungkan dalam kuota sisa. Gunakan `busyUntilAt` sampai jam tersebut tercapai atau user menggantinya.
 

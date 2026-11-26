@@ -169,6 +169,11 @@ internal fun CalendarScreen(workspace: Workspace, state: TazerState, zone: ZoneI
                 Text(DayFormat.format(day), Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
                 FilledTonalButton(onClick = { editId = "" }, enabled = !state.busy) { Text("Tambah acara") }
             }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                key(workspace.profile.ownerUid, workspace.profile.zoneId) {
+                    ImportIcsButton(workspace.profile.ownerUid, state.busy, model)
+                }
+            }
             if (agenda[day].isNullOrEmpty()) {
                 Text("Belum ada agenda pada tanggal ini.", Modifier.padding(vertical = 14.dp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant)

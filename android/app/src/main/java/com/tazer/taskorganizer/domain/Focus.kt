@@ -1,7 +1,5 @@
 package com.tazer.taskorganizer.domain
 
-import com.tazer.taskorganizer.domain.Scheduler.BREAK_MS
-import com.tazer.taskorganizer.domain.Scheduler.MAX_FOCUS
 import com.tazer.taskorganizer.domain.Scheduler.MINUTE_MS
 import java.time.Instant
 import java.time.ZoneId
@@ -33,8 +31,8 @@ internal data class FocusClock(
     fun cutoffReached(now: FocusMoment): Boolean =
         remainingAt(now)?.let { it <= 0L } ?: false
 
-    fun breakTaken(now: FocusMoment): Boolean =
-        !isSameBoot(now) || now.elapsedMs - requireNotNull(startElapsedMs) - segmentWorkAt(now) >= BREAK_MS
+    fun breakTaken(now: FocusMoment, preset: FocusPreset = FocusPreset.DEFAULT): Boolean =
+        !isSameBoot(now) || now.elapsedMs - requireNotNull(startElapsedMs) - segmentWorkAt(now) >= preset.breakMs
 }
 
 internal fun remainingAfterInterruption(remainingMinutes: Int, workMs: Long): Int =
@@ -45,12 +43,13 @@ internal fun continuousWorkMs(
     startElapsedMs: Long,
     workMs: Long,
     previous: Sequence<TimeBlock>,
+    preset: FocusPreset = FocusPreset.DEFAULT,
 ): Long {
     var start = startElapsedMs
     var total = workMs
     for (segment in previous) {
-        if (total >= MAX_FOCUS * MINUTE_MS) break
-        if (start - segment.endAt >= BREAK_MS) break
+        if (total >= preset.workMinutes * MINUTE_MS) break
+        if (start - segment.endAt >= preset.breakMs) break
         total += (minOf(start, segment.endAt) - segment.startAt).coerceAtLeast(0L)
         start = segment.startAt
     }
@@ -66,15 +65,18 @@ internal fun focusDurationMs(
     activeEnd: Int,
     plannedMinutes: Int? = null,
     continuousWorkMs: Long = 0L,
+    preset: FocusPreset = FocusPreset.DEFAULT,
 ): Long {
-    val availableMs = focusAvailableMs(now, task.deadlineAt, rules, zone, activeStart, activeEnd, continuousWorkMs)
+    val availableMs = focusAvailableMs(
+        now, task.deadlineAt, rules, zone, activeStart, activeEnd, continuousWorkMs, preset.workMinutes * MINUTE_MS,
+    )
     if (plannedMinutes != null) {
         val plannedMs = plannedMinutes * MINUTE_MS
-        return if (plannedMinutes in 1..minOf(MAX_FOCUS, task.remainingMinutes) && plannedMs <= availableMs) {
+        return if (plannedMinutes in 1..minOf(preset.workMinutes, task.remainingMinutes) && plannedMs <= availableMs) {
             plannedMs
         } else 0L
     }
-    return Scheduler.chunkMinutes(task.remainingMinutes, (availableMs / MINUTE_MS).toInt()) * MINUTE_MS
+    return Scheduler.chunkMinutes(task.remainingMinutes, (availableMs / MINUTE_MS).toInt(), preset) * MINUTE_MS
 }
 
 internal fun focusAvailableMs(
@@ -85,6 +87,7 @@ internal fun focusAvailableMs(
     activeStart: Int,
     activeEnd: Int,
     continuousWorkMs: Long,
+    workLimitMs: Long = FocusPreset.DEFAULT.workMinutes * MINUTE_MS,
 ): Long {
     val day = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
     val days = listOf(day.minusDays(1), day, day.plusDays(1))
@@ -97,6 +100,6 @@ internal fun focusAvailableMs(
         .minOfOrNull { it.startAt } ?: Long.MAX_VALUE
     val deadline = deadlineAt.takeIf { it > now } ?: Long.MAX_VALUE
     val endAt = minOf(activeEndAt, nextFixedAt, deadline)
-    if (endAt <= now || continuousWorkMs >= MAX_FOCUS * MINUTE_MS) return 0L
-    return minOf(endAt - now, MAX_FOCUS * MINUTE_MS - continuousWorkMs)
+    if (endAt <= now || continuousWorkMs >= workLimitMs) return 0L
+    return minOf(endAt - now, workLimitMs - continuousWorkMs)
 }

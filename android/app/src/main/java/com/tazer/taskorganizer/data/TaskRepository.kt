@@ -3,6 +3,7 @@ package com.tazer.taskorganizer.data
 import androidx.room.withTransaction
 import com.tazer.taskorganizer.domain.FocusClock
 import com.tazer.taskorganizer.domain.FocusMoment
+import com.tazer.taskorganizer.domain.FocusPreset
 import com.tazer.taskorganizer.domain.PlannedWork
 import com.tazer.taskorganizer.domain.SchedulePlan
 import com.tazer.taskorganizer.domain.ScheduleRule
@@ -17,7 +18,10 @@ import java.time.ZoneId
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
 
-class TaskRepository(private val database: TazerDatabase) {
+class TaskRepository(
+    private val database: TazerDatabase,
+    private val focusPreset: (String) -> FocusPreset = { FocusPreset.DEFAULT },
+) {
     private val dao = database.tazerDao()
 
     fun observeProfile(uid: String): Flow<UserProfile?> = dao.observeProfile(requireUid(uid))
@@ -207,23 +211,24 @@ class TaskRepository(private val database: TazerDatabase) {
             val task = dao.findTask(uid, session.taskId)?.takeUnless { it.status == TaskStatus.DONE }
                 ?: return@withTransaction null
             val profile = dao.findProfile(uid) ?: return@withTransaction null
+            val preset = focusPreset(uid)
             val rules = scheduleRules(uid)
-            val breakBlock = breakReservation(uid, now.wallMs, now)
+            val breakBlock = breakReservation(uid, now.wallMs, preset, now)
             val durationMs = if (now.wallMs < session.plannedEndAt && breakBlock == null &&
                 (profile.busyUntilAt ?: now.wallMs) <= now.wallMs
             ) {
-                profile.focusDurationAt(now.wallMs, task, rules, plannedMinutes = session.plannedMinutes)
+                profile.focusDurationAt(now.wallMs, task, rules, preset, plannedMinutes = session.plannedMinutes)
             } else 0L
             if (durationMs == 0L) {
-                return@withTransaction FocusChange(null, applyPlan(profile, now.wallMs, rules, breakBlock))
+                return@withTransaction FocusChange(null, applyPlan(profile, now.wallMs, rules, breakBlock, preset))
             }
             val running = session.startTimer(WorkSessionState.RUNNING, durationMs, now)
             saveFocus(session, running)
             check(dao.updateFocusTask(uid, task.id, task.remainingMinutes) == 1)
             val end = now.wallMs + durationMs
             val plan = if (end != session.plannedEndAt) {
-                val reserved = TimeBlock(now.wallMs, end + Scheduler.BREAK_MS)
-                applyPlan(profile, now.wallMs, rules, reserved, running)
+                val reserved = TimeBlock(now.wallMs, end + preset.breakMs)
+                applyPlan(profile, now.wallMs, rules, reserved, preset, running)
             } else null
             FocusChange(running, plan)
         }
@@ -259,10 +264,11 @@ class TaskRepository(private val database: TazerDatabase) {
         ) return@withTransaction null
         val task = requireNotNull(dao.findTask(uid, session.taskId)).copy(remainingMinutes = additionalMinutes)
         val profile = requireNotNull(dao.findProfile(uid))
+        val preset = focusPreset(uid)
         val rules = scheduleRules(uid)
-        val continuous = continuousWorkAt(session, now)
+        val continuous = continuousWorkAt(session, now, preset)
         val durationMs = if ((profile.busyUntilAt ?: now.wallMs) <= now.wallMs) {
-            profile.focusDurationAt(now.wallMs, task, rules, continuous = continuous)
+            profile.focusDurationAt(now.wallMs, task, rules, preset, continuous = continuous)
         } else 0L
 
         closeFocus(session, now)
@@ -274,8 +280,8 @@ class TaskRepository(private val database: TazerDatabase) {
         val extended = PlannedWork(task.id, now.wallMs, end, minutes).toPendingSession(uid)
             .startTimer(WorkSessionState.EXTENDED, durationMs, now, continuous)
         dao.insertSession(extended)
-        val reserved = TimeBlock(now.wallMs, end + Scheduler.BREAK_MS)
-        FocusChange(extended, applyPlan(profile, now.wallMs, rules, reserved, extended))
+        val reserved = TimeBlock(now.wallMs, end + preset.breakMs)
+        FocusChange(extended, applyPlan(profile, now.wallMs, rules, reserved, preset, extended))
     }
 
     suspend fun pauseFocus(uid: String, id: String, revision: Long, now: FocusMoment): FocusChange? =
@@ -302,7 +308,8 @@ class TaskRepository(private val database: TazerDatabase) {
                 ?.takeIf { it.state == WorkSessionState.PAUSED } ?: return@withTransaction null
             val remaining = requireNotNull(session.pausedRemainingMs)
             val clock = session.clock()
-            val continuous = if (clock.breakTaken(now)) 0L else continuousWorkAt(session, now)
+            val preset = focusPreset(uid)
+            val continuous = if (clock.breakTaken(now, preset)) 0L else continuousWorkAt(session, now, preset)
             val resumed = session.copy(
                 state = requireNotNull(session.pausedFromState),
                 timerBootId = now.bootId,
@@ -319,15 +326,19 @@ class TaskRepository(private val database: TazerDatabase) {
                 val profile = requireNotNull(dao.findProfile(uid))
                 val task = requireNotNull(dao.findTask(uid, session.taskId))
                 val rules = scheduleRules(uid)
+                // A narrower preset applies to new work, while a paused countdown keeps its original budget.
+                val committedWorkMs = (session.continuousWorkBeforeSegmentMs ?: 0L) +
+                    session.plannedMinutes * Scheduler.MINUTE_MS
                 val available = focusAvailableMs(
                     now.wallMs, task.deadlineAt, rules, ZoneId.of(profile.zoneId),
                     profile.activeStartMinute, profile.activeEndMinute, continuous,
+                    maxOf(preset.workMinutes * Scheduler.MINUTE_MS, committedWorkMs),
                 )
                 if ((profile.busyUntilAt ?: now.wallMs) > now.wallMs || remaining > available) {
                     return@withTransaction null
                 }
-                val reserved = TimeBlock(now.wallMs, now.wallMs + remaining + Scheduler.BREAK_MS)
-                applyPlan(profile, now.wallMs, rules, reserved, resumed)
+                val reserved = TimeBlock(now.wallMs, now.wallMs + remaining + preset.breakMs)
+                applyPlan(profile, now.wallMs, rules, reserved, preset, resumed)
             } else null
             saveFocus(session, resumed)
             FocusChange(resumed, plan)
@@ -379,7 +390,8 @@ class TaskRepository(private val database: TazerDatabase) {
             if (dao.hasActiveSession(uid)) {
                 return@withTransaction SchedulePlan(pendingFocus(uid).map { it.toPlannedWork() }, emptyList())
             }
-            applyPlan(profile, now, scheduleRules(uid), breakReservation(uid, now))
+            val preset = focusPreset(uid)
+            applyPlan(profile, now, scheduleRules(uid), breakReservation(uid, now, preset), preset)
         }
     }
 
@@ -442,7 +454,7 @@ class TaskRepository(private val database: TazerDatabase) {
         workBeforeSegmentMs ?: 0L, state == WorkSessionState.PAUSED,
     )
 
-    private suspend fun continuousWorkAt(session: WorkSession, now: FocusMoment): Long {
+    private suspend fun continuousWorkAt(session: WorkSession, now: FocusMoment, preset: FocusPreset): Long {
         val clock = session.clock()
         val segmentWork = clock.segmentWorkAt(now)
         session.continuousWorkBeforeSegmentMs?.let { return it + segmentWork }
@@ -451,7 +463,7 @@ class TaskRepository(private val database: TazerDatabase) {
             val start = requireNotNull(it.activeSinceElapsedMs)
             TimeBlock(start, start + requireNotNull(it.actualWorkMs))
         }
-        return continuousWorkMs(requireNotNull(session.activeSinceElapsedMs), segmentWork, previous)
+        return continuousWorkMs(requireNotNull(session.activeSinceElapsedMs), segmentWork, previous, preset)
     }
 
     private fun WorkSession.startTimer(
@@ -475,21 +487,29 @@ class TaskRepository(private val database: TazerDatabase) {
         now: Long,
         task: Task,
         rules: List<ScheduleRule>,
+        preset: FocusPreset,
         plannedMinutes: Int? = null,
         continuous: Long = 0L,
     ) = focusDurationMs(
         now, task.toSchedulingTask(), rules, ZoneId.of(zoneId), activeStartMinute, activeEndMinute,
-        plannedMinutes, continuous,
+        plannedMinutes, continuous, preset,
     )
 
-    private suspend fun breakReservation(uid: String, now: Long, moment: FocusMoment? = null): TimeBlock? {
+    private suspend fun breakReservation(
+        uid: String, now: Long, preset: FocusPreset, moment: FocusMoment? = null,
+    ): TimeBlock? {
         val endedAt = dao.findLatestFocusEnd(uid, now, moment?.elapsedMs, moment?.bootId) ?: return null
-        val end = endedAt + Scheduler.BREAK_MS
+        val end = endedAt + preset.breakMs
         return TimeBlock(now, end).takeIf { end > now }
     }
 
-    private suspend fun replanFocus(uid: String, now: FocusMoment): SchedulePlan =
-        applyPlan(requireNotNull(dao.findProfile(uid)), now.wallMs, scheduleRules(uid), breakReservation(uid, now.wallMs, now))
+    private suspend fun replanFocus(uid: String, now: FocusMoment): SchedulePlan {
+        val preset = focusPreset(uid)
+        return applyPlan(
+            requireNotNull(dao.findProfile(uid)), now.wallMs, scheduleRules(uid),
+            breakReservation(uid, now.wallMs, preset, now), preset,
+        )
+    }
 
     private suspend fun scheduleRules(uid: String): List<ScheduleRule> = dao.findFixedSchedules(uid).map {
         ScheduleRule(it.id, it.label, it.dayOfWeek, it.startMinute, it.endMinute)
@@ -500,6 +520,7 @@ class TaskRepository(private val database: TazerDatabase) {
         now: Long,
         rules: List<ScheduleRule>,
         reserved: TimeBlock?,
+        preset: FocusPreset,
         retained: WorkSession? = null,
     ): SchedulePlan {
         val uid = profile.ownerUid
@@ -518,6 +539,7 @@ class TaskRepository(private val database: TazerDatabase) {
             now = now,
             busyUntilAt = profile.busyUntilAt,
             reserved = listOfNotNull(reserved),
+            preset = preset,
         )
         val unmatched = plan.sessions.toMutableSet()
         val staleIds = pendingFocus(uid).filterNot { unmatched.remove(it.toPlannedWork()) }.map { it.id }
@@ -541,7 +563,7 @@ class TaskRepository(private val database: TazerDatabase) {
         plannedMinutes: Int,
     ): WorkSession? {
         requireUid(uid)
-        require(plannedMinutes in 1..50)
+        require(plannedMinutes in 1..focusPreset(uid).workMinutes)
         val durationMs = plannedMinutes * 60_000L
         require(plannedStartAt <= Long.MAX_VALUE - durationMs)
         return database.withTransaction {

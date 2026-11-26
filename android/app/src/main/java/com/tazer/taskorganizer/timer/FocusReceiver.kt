@@ -1,6 +1,7 @@
 package com.tazer.taskorganizer.timer
 
 import android.app.AlarmManager
+import android.app.NotificationManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -42,6 +43,7 @@ class FocusReceiver : BroadcastReceiver() {
             add(Intent.ACTION_BOOT_COMPLETED)
             add(Intent.ACTION_TIME_CHANGED)
             add(Intent.ACTION_TIMEZONE_CHANGED)
+            add(NotificationManager.ACTION_NOTIFICATION_POLICY_ACCESS_GRANTED_CHANGED)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 add(AlarmManager.ACTION_SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED)
             }

@@ -45,6 +45,12 @@ Tempel awalan itu sebelum instruksi peran. Lead memakai model yang ditetapkan pa
 2. Deploy Worker dengan `npx wrangler deploy --keep-vars`. Uji readiness, penolakan 401, respons analyzer lama, dan respons dengan header saran checklist.
 3. Uji Room v3 ke v4, antrean offline, replay konflik, checklist, kalibrasi, dan widget dari layar utama. Build APK signed versi 1.3.0 kode 9 dan uji upgrade dari APK 1.2.2 dengan akun, tugas, acara, dan pengaturan yang sudah tersimpan.
 
+## Gate rilis 1.4.0
+
+1. Uji parser iCalendar, pratinjau, impor ulang, dan replikasi hasil ke staging. Uji agregat statistik, rentang tujuh tanggal, akurasi, serta streak.
+2. Uji tiga preset pada Scheduler dan simulasikan DND tanpa akses, aktif, jeda, selesai, dan pemulihan. Periksa Statistik dan impor file pada emulator API 37 di Light dan Dark.
+3. Build APK signed 1.4.0 kode 10. Uji upgrade dari signed 1.3.0, termasuk akun, Cloud Sync, checklist, kalender, tema, dan widget yang telah dipasang. Periksa Worker `/health`, lint, tanda tangan, secret scan, dan graph.
+
 ## Template handoff
 
 1. **Wave [N] — Langkah [X] dari [Y] (~[Z] menit).** [Aksi atau hasil inti, model dan effort aktual.]

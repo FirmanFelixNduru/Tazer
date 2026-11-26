@@ -1,8 +1,11 @@
 package com.tazer.taskorganizer.ui
 
 import android.app.Activity
+import android.app.Instrumentation
 import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.Rect
+import android.net.Uri
 import android.os.Build
 import android.os.SystemClock
 import android.view.MotionEvent
@@ -13,6 +16,11 @@ import com.tazer.taskorganizer.MainActivity
 import com.tazer.taskorganizer.data.CalendarRepository
 import com.tazer.taskorganizer.data.TaskRepository
 import com.tazer.taskorganizer.data.TazerDatabase
+import java.io.File
+import com.tazer.taskorganizer.data.WorkSession
+import com.tazer.taskorganizer.data.WorkSessionState
+import com.tazer.taskorganizer.domain.FocusPresetMode
+import com.tazer.taskorganizer.timer.FocusRuntime
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.temporal.TemporalAdjusters
@@ -67,6 +75,101 @@ class ReleaseUiTest {
             finish()
             preference.save(original)
         }
+    }
+
+    @Test
+    fun statisticsUsesRoomHistoryAndRendersInLightAndDark() = runBlocking {
+        val database = TazerDatabase.getInstance(context)
+        val tasks = TaskRepository(database)
+        val preference = ThemePreference(context)
+        val original = preference.read()
+        val course = "Statistik QA " + UUID.randomUUID().toString().take(8)
+        var taskId: String? = null
+        try {
+            launch() // Establishes the existing demo owner and profile.
+            val now = System.currentTimeMillis()
+            val ended = now - 5 * 60_000L
+            val started = ended - 40 * 60_000L
+            val task = tasks.createTask(UID, course, course, "", now + 60_000L, 2, 30, started)
+            taskId = task.id
+            database.tazerDao().insertSession(WorkSession(
+                UUID.randomUUID().toString(), task.id, UID, WorkSessionState.DONE, started, ended, 40,
+                started, ended, ended - started, null, null, null, null, 0L,
+            ))
+            assertTrue(tasks.completeTask(UID, task.id, ended))
+            for (mode in listOf(TazerThemeMode.LIGHT, TazerThemeMode.DARK)) {
+                finish()
+                preference.save(mode)
+                launch()
+                waitFor("Statistics navigation unavailable") { clickText("Statistik") }
+                waitFor("Weekly chart did not open") {
+                    if (Build.VERSION.SDK_INT >= 33) automation.clearCache()
+                    findText("Fokus harian") != null
+                }
+                val screenshot = requireNotNull(automation.takeScreenshot())
+                try {
+                    assertEquals(if (mode == TazerThemeMode.LIGHT) android.graphics.Color.WHITE else android.graphics.Color.BLACK,
+                        screenshot.getPixel(4, screenshot.height / 8))
+                } finally { screenshot.recycle() }
+                waitFor("Estimate accuracy for the Room fixture is missing") {
+                    find { it.text?.toString()?.startsWith("Akurasi estimasi") == true } != null || scrollUp()
+                }
+                waitFor("Room focus course is missing from statistics") { findText(course) != null || scrollUp() }
+            }
+        } finally {
+            taskId?.let { tasks.deleteTask(UID, it) }
+            finish()
+            preference.save(original)
+        }
+    }
+
+    @Test
+    fun focusPresetPersistsWithDndPermissionFallback() = runBlocking {
+        launch()
+        val focus = FocusRuntime.get(context)
+        val previous = focus.focusSettings()
+        val policyAccess = focus.hasDndAccess()
+        if (policyAccess) setDndTestAccess(false)
+        try {
+            waitFor("Settings unavailable") { clickText("Pengaturan") }
+            waitFor("Focus settings button unavailable") { clickText("Pengaturan fokus") }
+            waitFor("Focus settings dialog did not open") { findText("Durasi fokus dan jeda") != null }
+            val pomodoro = "Pomodoro · 25 mnt fokus, 5 mnt jeda"
+            waitFor("Pomodoro could not be selected") { clickText(pomodoro) }
+            if (findText("Buka akses Jangan Ganggu") == null) {
+                waitFor("DND opt-in unavailable") { clickText("Jangan Ganggu saat fokus") || scrollUp() }
+            }
+            waitFor("DND permission explanation missing") {
+                if (Build.VERSION.SDK_INT >= 33) automation.clearCache()
+                findText("Buka akses Jangan Ganggu") != null || scrollUp()
+            }
+            assertEquals(android.provider.Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS, focus.dndSettingsIntent().action)
+            waitFor("Focus preference could not be saved") { clickText("Simpan") }
+            waitFor("Focus preferences were not applied") {
+                focus.focusSettings().preset.mode == FocusPresetMode.POMODORO && focus.focusSettings().dndEnabled
+            }
+            finish()
+            launch()
+            assertEquals(25, focus.focusSettings().preset.workMinutes)
+            assertEquals(5, focus.focusSettings().preset.breakMinutes)
+            assertTrue(focus.focusSettings().dndEnabled)
+            waitFor("Schedule navigation unavailable") { clickText("Jadwal") }
+            waitFor("Schedule did not show the selected rhythm") {
+                if (Build.VERSION.SDK_INT >= 33) automation.clearCache()
+                findText("Pomodoro · 25 mnt fokus · 5 mnt jeda") != null
+            }
+        } finally {
+            focus.saveFocusSettings(previous)
+            if (policyAccess) setDndTestAccess(true)
+            finish()
+        }
+    }
+
+    private fun setDndTestAccess(granted: Boolean) {
+        val command = if (granted) "allow_dnd" else "disallow_dnd"
+        android.os.ParcelFileDescriptor.AutoCloseInputStream(
+            automation.executeShellCommand("cmd notification $command ${context.packageName}"),
+        ).use { it.readBytes() }
     }
 
     @Test
@@ -130,6 +233,63 @@ class ReleaseUiTest {
             // Include partially-created fixtures if an assertion fails during setup.
             calendar.observeEvents(UID).first().filter { it.id in fixtureIds || it.title == singleTitle || it.title == spanTitle }
                 .forEach { calendar.deleteEvent(UID, it.id) }
+        }
+    }
+
+    @Test
+    fun calendarAndSettingsPreviewTheSamePickedIcsAndOnlySaveOnConfirm() = runBlocking {
+        val database = TazerDatabase.getInstance(context)
+        val calendar = CalendarRepository(database)
+        val dao = database.tazerDao()
+        val title = "Impor uji " + UUID.randomUUID().toString().take(8)
+        val document = File.createTempFile("tazer-ics-", ".ics", context.cacheDir)
+        document.writeText("""
+            BEGIN:VCALENDAR
+            VERSION:2.0
+            BEGIN:VEVENT
+            UID:$title-event
+            DTSTART;VALUE=DATE:20261126
+            SUMMARY:$title
+            END:VEVENT
+            BEGIN:VEVENT
+            UID:$title-weekly
+            DTSTART:20261126T090000
+            DTEND:20261126T100000
+            SUMMARY:$title
+            RRULE:FREQ=WEEKLY
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent())
+        val filter = IntentFilter(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addDataType("*/*")
+            addCategory(Intent.CATEGORY_OPENABLE)
+        }
+        val monitor = instrumentation.addMonitor(
+            filter, Instrumentation.ActivityResult(Activity.RESULT_OK, Intent().setData(Uri.fromFile(document))), true,
+        )
+        try {
+            launch()
+            for (section in listOf("Kalender", "Pengaturan")) {
+                waitFor("$section unavailable") { clickText(section) }
+                waitFor("File picker button missing in $section") { clickText("Impor .ics") || scrollUp() }
+                waitFor("Preview counts missing in $section") {
+                    findText("1 acara kalender baru") != null && findText("1 blok jadwal tetap baru") != null
+                }
+                assertTrue(calendar.observeEvents(UID).first().none { it.title == title })
+                assertTrue(dao.findFixedSchedules(UID).none { it.label == title })
+                val action = if (section == "Kalender") "Batal" else "Impor"
+                waitFor("Preview action $action unavailable") { clickText(action) }
+                waitFor("Preview did not close") { findText("Pratinjau impor .ics") == null }
+            }
+            assertEquals(2, monitor.hits)
+            assertEquals(1, calendar.observeEvents(UID).first().count { it.title == title })
+            assertEquals(1, dao.findFixedSchedules(UID).count { it.label == title })
+        } finally {
+            instrumentation.removeMonitor(monitor)
+            finish()
+            document.delete()
+            calendar.observeEvents(UID).first().filter { it.title == title }.forEach { calendar.deleteEvent(UID, it.id) }
+            dao.findFixedSchedules(UID).filter { it.label == title }.forEach { dao.deleteFixedSchedule(UID, it.id) }
         }
     }
 

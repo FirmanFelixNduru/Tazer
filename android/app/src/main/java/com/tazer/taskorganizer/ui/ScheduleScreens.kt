@@ -70,6 +70,7 @@ import com.tazer.taskorganizer.data.UserProfile
 import com.tazer.taskorganizer.data.WorkSession
 import com.tazer.taskorganizer.data.WorkSessionState
 import com.tazer.taskorganizer.domain.ScheduleRule
+import com.tazer.taskorganizer.domain.FocusPreset
 import com.tazer.taskorganizer.domain.Scheduler
 import java.time.DayOfWeek
 import java.time.LocalDate
@@ -93,6 +94,7 @@ private data class TimelineRow(
 internal fun TimelineScreen(
     workspace: Workspace, state: TazerState, zone: ZoneId, day: LocalDate, selectDay: (LocalDate) -> Unit,
     openFocus: (WorkSession) -> Unit, defer: () -> Unit, permissions: () -> Unit,
+    focusPreset: FocusPreset,
 ) {
     val today = localDate(state.now, zone)
     val start = day.atStartOfDay(zone).toInstant().toEpochMilli()
@@ -123,8 +125,9 @@ internal fun TimelineScreen(
             item {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     OutlinedButton(onClick = defer, enabled = !state.busy) { Text("Saya lagi sibuk") }
-                    OutlinedButton(onClick = permissions) { Text("Izin pengingat") }
+                    OutlinedButton(onClick = permissions) { Text("Pengaturan fokus") }
                 }
+                FocusRhythm(focusPreset, Modifier.padding(top = 6.dp))
                 if (state.risks.isNotEmpty()) Text(
                     "Risiko lewat deadline pada ${state.risks.size} tugas. Lihat tab Belum Selesai.",
                     color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(vertical = 8.dp),
@@ -315,7 +318,10 @@ private fun ScheduleTag(label: String) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun SettingsScreen(workspace: Workspace, state: TazerState, model: TazerViewModel, theme: TazerThemeMode, setTheme: (TazerThemeMode) -> Unit) {
+internal fun SettingsScreen(
+    workspace: Workspace, state: TazerState, model: TazerViewModel, theme: TazerThemeMode,
+    setTheme: (TazerThemeMode) -> Unit, openFocusSettings: () -> Unit,
+) {
     var editId by rememberSaveable { mutableStateOf<String?>(null) }
     var deleteId by rememberSaveable { mutableStateOf<String?>(null) }
     val profile = workspace.profile
@@ -324,6 +330,8 @@ internal fun SettingsScreen(workspace: Workspace, state: TazerState, model: Taze
     LazyColumn(contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp)) {
         item {
             ThemeSetting(theme, setTheme)
+            HorizontalDivider(modifier = Modifier.padding(vertical = 14.dp))
+            OutlinedButton(onClick = openFocusSettings) { Text("Pengaturan fokus") }
             HorizontalDivider(modifier = Modifier.padding(vertical = 14.dp))
             state.cloudStatus?.let { status ->
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -336,7 +344,12 @@ internal fun SettingsScreen(workspace: Workspace, state: TazerState, model: Taze
             ProfileForm(profile, state.busy, model)
             HorizontalDivider(modifier = Modifier.padding(vertical = 14.dp))
             Text("Jadwal tetap", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
-            OutlinedButton(onClick = { editId = "" }, enabled = !state.busy) { Text("Tambah jadwal tetap") }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { editId = "" }, enabled = !state.busy) { Text("Tambah jadwal tetap") }
+                key(profile.ownerUid, profile.zoneId) {
+                    ImportIcsButton(profile.ownerUid, state.busy, model)
+                }
+            }
         }
         items(workspace.fixed.sortedWith(compareBy<FixedSchedule> { it.dayOfWeek }.thenBy { it.startMinute }), key = { it.id }) { block ->
             Surface(Modifier.fillMaxWidth().padding(vertical = 6.dp), shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {

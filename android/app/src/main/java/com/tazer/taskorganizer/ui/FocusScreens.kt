@@ -9,9 +9,13 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -19,8 +23,11 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -29,11 +36,13 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -43,12 +52,16 @@ import com.tazer.taskorganizer.data.TaskStatus
 import com.tazer.taskorganizer.data.WorkSession
 import com.tazer.taskorganizer.data.WorkSessionState
 import com.tazer.taskorganizer.domain.FocusMoment
+import com.tazer.taskorganizer.domain.FocusPreset
+import com.tazer.taskorganizer.domain.FocusPresetMode
 import com.tazer.taskorganizer.timer.FocusRuntime
+import com.tazer.taskorganizer.timer.FocusSettings
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.util.Locale
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 private val TickingFocusStates = setOf(WorkSessionState.RUNNING, WorkSessionState.OVERTIME, WorkSessionState.EXTENDED)
 internal val ActiveFocusStates = TickingFocusStates + WorkSessionState.PAUSED
@@ -122,6 +135,7 @@ internal fun FocusScreen(
     ) {
         Text(task.title, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
         Text(task.course, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        FocusRhythm(model.focus.focusSettings().preset)
         val status = when (session.state) {
                 WorkSessionState.PENDING -> "Sesi terjadwal"
                 WorkSessionState.PAUSED -> "Dijeda"
@@ -192,7 +206,7 @@ internal fun FocusScreen(
             HorizontalDivider(Modifier.padding(vertical = 4.dp))
         }
         OutlinedButton(onClick = defer, enabled = !state.busy) { Text("Saya lagi sibuk") }
-        OutlinedButton(onClick = permissions) { Text("Izin pengingat") }
+        OutlinedButton(onClick = permissions) { Text("Pengaturan fokus") }
     }
     if (decision == "decision" && session.state == WorkSessionState.OVERTIME) {
         AlertDialog(
@@ -276,19 +290,92 @@ internal fun DeferFocusDialog(zone: ZoneId, busy: Boolean, model: TazerViewModel
 
 @Composable
 internal fun FocusPermissionsDialog(
-    focus: FocusRuntime, refresh: Int, launch: (Intent) -> Unit, requestNotification: () -> Unit, close: () -> Unit,
+    focus: FocusRuntime,
+    refresh: Int,
+    launch: (Intent) -> Unit,
+    requestNotification: () -> Unit,
+    onPresetSaved: () -> Unit = {},
+    close: () -> Unit,
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val initial = remember(focus) { focus.focusSettings() }
+    var mode by rememberSaveable { mutableStateOf(initial.preset.mode) }
+    var work by rememberSaveable { mutableStateOf(initial.preset.customWorkMinutes.toString()) }
+    var rest by rememberSaveable { mutableStateOf(initial.preset.customBreakMinutes.toString()) }
+    var dnd by rememberSaveable { mutableStateOf(initial.dndEnabled) }
+    var saving by remember { mutableStateOf(false) }
+    var failed by rememberSaveable { mutableStateOf(false) }
+    val workMinutes = work.toIntOrNull()?.takeIf { it in FocusPreset.WORK_RANGE }
+    val breakMinutes = rest.toIntOrNull()?.takeIf { it in FocusPreset.BREAK_RANGE }
+    val valid = mode != FocusPresetMode.CUSTOM || workMinutes != null && breakMinutes != null
+    val preset = FocusPreset(mode, workMinutes ?: initial.preset.customWorkMinutes,
+        breakMinutes ?: initial.preset.customBreakMinutes)
+    val dirty = !valid || preset != initial.preset || dnd != initial.dndEnabled
+    val dndAccess = remember(refresh) { focus.hasDndAccess() }
     val notifications = remember(refresh) { focus.notificationsEnabled() }
     val exact = remember(refresh) { focus.canScheduleExactAlarms() }
     val battery = remember(refresh) {
         context.getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(context.packageName)
     }
     AlertDialog(
-        onDismissRequest = close,
-        title = { Text("Izin pengingat") },
+        onDismissRequest = { if (!saving) close() },
+        title = { Text("Pengaturan fokus") },
         text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Column(Modifier.verticalScroll(rememberScrollState()).imePadding(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Durasi fokus dan jeda", Modifier.semantics { heading() },
+                    style = MaterialTheme.typography.titleSmall)
+                Column(Modifier.selectableGroup()) {
+                    for (option in FocusPresetMode.entries) {
+                        val label = when (option) {
+                            FocusPresetMode.DEEP_WORK -> "Deep Work · 50 mnt fokus, 10 mnt jeda"
+                            FocusPresetMode.POMODORO -> "Pomodoro · 25 mnt fokus, 5 mnt jeda"
+                            FocusPresetMode.CUSTOM -> "Custom"
+                        }
+                        Row(
+                            Modifier.fillMaxWidth().heightIn(min = 48.dp).selectable(
+                                selected = mode == option, enabled = !saving, role = Role.RadioButton,
+                                onClick = { mode = option },
+                            ),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            RadioButton(selected = mode == option, enabled = !saving, onClick = null)
+                            Text(label)
+                        }
+                    }
+                }
+                if (mode == FocusPresetMode.CUSTOM) {
+                    OutlinedTextField(work, { work = it }, Modifier.fillMaxWidth(), enabled = !saving,
+                        label = { Text("Fokus (menit)") }, supportingText = { Text("15–120 menit") },
+                        isError = workMinutes == null, singleLine = true, keyboardOptions = NumberKeyboard)
+                    OutlinedTextField(rest, { rest = it }, Modifier.fillMaxWidth(), enabled = !saving,
+                        label = { Text("Jeda (menit)") }, supportingText = { Text("1–30 menit") },
+                        isError = breakMinutes == null, singleLine = true, keyboardOptions = NumberKeyboard)
+                }
+                Text("Durasi ini berlaku untuk blok baru. Hitung mundur yang sudah dimulai tetap berjalan.")
+                HorizontalDivider(Modifier.padding(vertical = 6.dp))
+                if (focus.dndSupported()) {
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(
+                            value = dnd, enabled = !saving, role = Role.Switch, onValueChange = { dnd = it },
+                        ),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Text("Jangan Ganggu saat fokus", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
+                        Switch(checked = dnd, onCheckedChange = null, enabled = !saving)
+                    }
+                    Text("Saat Anda mulai atau melanjutkan timer, Tazer membisukan notifikasi dan tetap mengizinkan alarm. " +
+                        "Anda mengatur mode dan aksesnya di Android.")
+                    if (dnd && !dndAccess) {
+                        Text("Tazer memerlukan akses Jangan Ganggu.")
+                        OutlinedButton(onClick = { launch(focus.dndSettingsIntent()) }) { Text("Buka akses Jangan Ganggu") }
+                    }
+                    HorizontalDivider(Modifier.padding(vertical = 6.dp))
+                }
+                Text("Izin pengingat", Modifier.semantics { heading() }, style = MaterialTheme.typography.titleSmall)
                 Text(if (notifications) "Notifikasi aktif" else "Notifikasi belum aktif")
                 if (!notifications) {
                     OutlinedButton(onClick = requestNotification) { Text("Izinkan notifikasi") }
@@ -309,9 +396,44 @@ internal fun FocusPermissionsDialog(
                     Text("Saat Doze, Android dapat menunda pengingat. Periksa pengaturan baterai jika pengingat sering terlambat.")
                     OutlinedButton(onClick = { launch(focus.batterySettingsIntent()) }) { Text("Pengaturan baterai") }
                 }
+                if (failed) Text("Pengaturan belum tersimpan. Coba simpan lagi.", color = MaterialTheme.colorScheme.error)
             }
         },
-        confirmButton = { Button(onClick = close) { Text("Tutup") } },
+        dismissButton = { if (dirty) TextButton(onClick = close, enabled = !saving) { Text("Batal") } },
+        confirmButton = {
+            Button(enabled = valid && !saving, onClick = {
+                if (!dirty) {
+                    close()
+                } else {
+                    saving = true
+                    failed = false
+                    scope.launch {
+                        if (focus.saveFocusSettings(FocusSettings(preset, dnd))) {
+                            if (preset != initial.preset) onPresetSaved()
+                            close()
+                        } else {
+                            failed = true
+                            saving = false
+                        }
+                    }
+                }
+            }) { Text(if (dirty) "Simpan" else "Tutup") }
+        },
+    )
+}
+
+@Composable
+internal fun FocusRhythm(preset: FocusPreset, modifier: Modifier = Modifier) {
+    val name = when (preset.mode) {
+        FocusPresetMode.POMODORO -> "Pomodoro"
+        FocusPresetMode.DEEP_WORK -> "Deep Work"
+        FocusPresetMode.CUSTOM -> "Custom"
+    }
+    Text(
+        "$name · ${preset.workMinutes} mnt fokus · ${preset.breakMinutes} mnt jeda",
+        modifier = modifier,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        style = MaterialTheme.typography.bodySmall,
     )
 }
 

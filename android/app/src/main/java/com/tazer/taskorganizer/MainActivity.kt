@@ -16,7 +16,6 @@ import androidx.lifecycle.ViewModelProvider
 import com.tazer.taskorganizer.data.CalendarRepository
 import com.tazer.taskorganizer.data.CloudSync
 import com.tazer.taskorganizer.data.SubtaskRepository
-import com.tazer.taskorganizer.data.TaskRepository
 import com.tazer.taskorganizer.data.TazerDatabase
 import com.tazer.taskorganizer.integration.AndroidIntegration
 import com.tazer.taskorganizer.integration.networkAvailability
@@ -45,7 +44,7 @@ class MainActivity : ComponentActivity() {
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
                 val database = TazerDatabase.getInstance(applicationContext)
                 val integration = AndroidIntegration(applicationContext)
-                return TazerViewModel(TaskRepository(database), CalendarRepository(database),
+                return TazerViewModel(focus.taskRepository, CalendarRepository(database),
                     integration, focus, BuildConfig.DEBUG, SubtaskRepository(database),
                     CloudSync(database, integration::syncRpc), networkAvailability(applicationContext)) as T
             }

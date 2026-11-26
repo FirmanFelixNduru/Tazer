@@ -188,7 +188,10 @@ class FocusStartTest {
             for (index in 0 until root.childCount) find(root.getChild(index), text)?.let { return it }
             return null
         }
-        fun node(text: String) = find(automation.rootInActiveWindow, text)
+        fun node(text: String): AccessibilityNodeInfo? {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) automation.clearCache()
+            return find(automation.rootInActiveWindow, text)
+        }
         fun cutoffAlarm(session: WorkSession) = PendingIntent.getBroadcast(
             context, 0, FocusEvent(session, FocusEventKind.CUTOFF).receiverIntent(context),
             PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE,
@@ -197,8 +200,8 @@ class FocusStartTest {
             var target = node(text)
             while (target != null && !target.isClickable) target = target.parent
             if (target?.isEnabled != true) return false
-            if (target.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
             val bounds = Rect().also { target.getBoundsInScreen(it) }
+            if (bounds.isEmpty) return false
             val now = SystemClock.uptimeMillis()
             for (action in listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP)) {
                 val event = MotionEvent.obtain(now, SystemClock.uptimeMillis(), action,

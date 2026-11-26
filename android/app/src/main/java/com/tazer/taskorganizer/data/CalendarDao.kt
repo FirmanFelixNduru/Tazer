@@ -13,6 +13,9 @@ internal interface CalendarDao {
     """)
     fun observeEvents(uid: String): Flow<List<CalendarEvent>>
 
+    @Query("SELECT id FROM CalendarEvent WHERE ownerUid = :uid")
+    suspend fun findEventIds(uid: String): List<String>
+
     @Insert
     suspend fun insertEvent(event: CalendarEvent)
 
