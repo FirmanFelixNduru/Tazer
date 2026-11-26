@@ -1,5 +1,5 @@
 import { createHandler } from "./handler.js";
-import { geminiConfig, providerAnalyzer } from "./providers.js";
+import { geminiConfig, providerAnalyzer, providerImageExtractor } from "./providers.js";
 import type { ProviderEnv } from "./providers.js";
 import { supabase, supabaseConfig } from "./supabase.js";
 import type { SupabaseEnv } from "./supabase.js";
@@ -10,6 +10,7 @@ export function realHandler(env: Env) {
   return createHandler({
     ...supabase(env),
     analyze: providerAnalyzer(env),
+    extractImage: providerImageExtractor(env),
     readiness() {
       const { origin, publishableKey, secretKey } = supabaseConfig(env);
       const { key, model } = geminiConfig(env);

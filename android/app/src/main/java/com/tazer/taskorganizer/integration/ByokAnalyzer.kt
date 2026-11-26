@@ -71,18 +71,22 @@ private fun analyzeGemini(task: String, model: String, apiKey: String): TaskAnal
         ),
     )
     if (response.status != 200) fail(IntegrationError.AI_UNAVAILABLE)
-    val candidate = response.json().optJSONArray("candidates")?.optJSONObject(0)
+    return parseJson(geminiText(response.json())).analysis()
+}
+
+/** The answer text of a completed Gemini response, without thought parts. */
+internal fun geminiText(payload: JSONObject): String {
+    val candidate = payload.optJSONArray("candidates")?.optJSONObject(0)
         ?: fail(IntegrationError.AI_UNAVAILABLE)
     if (candidate.opt("finishReason") != "STOP") fail(IntegrationError.AI_UNAVAILABLE)
     val parts = candidate.optJSONObject("content")?.optJSONArray("parts")
         ?: fail(IntegrationError.AI_UNAVAILABLE)
-    val text = buildString {
+    return buildString {
         for (index in 0 until parts.length()) {
             val part = parts.optJSONObject(index) ?: fail(IntegrationError.AI_UNAVAILABLE)
             if (part.opt("thought") != true) append(part.string("text"))
         }
     }
-    return parseJson(text).analysis()
 }
 
 private fun analyzeGroq(task: String, model: String, apiKey: String): TaskAnalysisResult {

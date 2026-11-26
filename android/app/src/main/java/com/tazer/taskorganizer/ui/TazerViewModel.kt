@@ -1,5 +1,6 @@
 package com.tazer.taskorganizer.ui
 
+import android.content.ContentResolver
 import android.content.Intent
 import android.net.Uri
 import androidx.lifecycle.ViewModel
@@ -30,7 +31,9 @@ import com.tazer.taskorganizer.integration.AndroidIntegration
 import com.tazer.taskorganizer.integration.AuthCallback
 import com.tazer.taskorganizer.integration.ByokProvider
 import com.tazer.taskorganizer.integration.IntegrationError
+import com.tazer.taskorganizer.integration.ImageExtraction
 import com.tazer.taskorganizer.integration.IntegrationException
+import com.tazer.taskorganizer.integration.compressForScan
 import com.tazer.taskorganizer.integration.Subscription
 import com.tazer.taskorganizer.integration.SubscriptionTier
 import com.tazer.taskorganizer.integration.TaskAnalysisInput
@@ -40,9 +43,11 @@ import com.tazer.taskorganizer.timer.FocusRuntime
 import java.io.InputStream
 import java.time.Duration
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import kotlin.math.roundToInt
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -53,6 +58,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class Workspace(
     val profile: UserProfile,
@@ -105,6 +111,8 @@ data class AnalysisSuggestion(
 )
 
 enum class AnalyzerMode { OFFLINE, CLOUD, BYOK }
+
+data class ScanSuggestion(val extraction: ImageExtraction, val analysis: AnalysisSuggestion)
 
 class TazerViewModel internal constructor(
     private val repository: TaskRepository,
@@ -501,15 +509,49 @@ class TazerViewModel internal constructor(
         }
     }
 
+    /** Reads a picked image into a reviewable task. PRO uses one server slot; BYOK calls Gemini directly. */
+    suspend fun scanImage(resolver: ContentResolver, uri: Uri, zone: ZoneId): ScanSuggestion {
+        val tier = _state.value.subscription?.tier
+        if (_state.value.demo || (tier != SubscriptionTier.PRO && tier != SubscriptionTier.BYOK)) {
+            throw IntegrationException(IntegrationError.SCAN_REQUIRES_AI)
+        }
+        val jpeg = withContext(Dispatchers.Default) { compressForScan(resolver, uri) }
+        val today = LocalDate.now(zone)
+        val extraction = if (tier == SubscriptionTier.PRO) {
+            integration.extractImageCloud(jpeg, today, zone).also { refreshQuietly() }
+        } else {
+            integration.extractImageByok(jpeg, today, zone)
+        }
+        return ScanSuggestion(
+            extraction,
+            calibrated(extraction.course, extraction.difficultyScore, extraction.estimatedMinutes, AnalysisSource.AI,
+                extraction.subtasks),
+        )
+    }
+
+    private suspend fun refreshQuietly() {
+        try {
+            refreshSubscription()
+        } catch (failure: CancellationException) {
+            throw failure
+        } catch (_: IntegrationException) {
+            // Keep the valid result when refreshing the displayed quota is unavailable.
+        }
+    }
+
+    private fun calibrated(course: String, difficulty: Int, minutes: Int, source: AnalysisSource, subtasks: List<String>): AnalysisSuggestion {
+        val factor = _state.value.data?.let { PaceCalibration.factor(course, it.paceSamples()) }
+        return AnalysisSuggestion(
+            difficulty, PaceCalibration.adjustedMinutes(minutes, factor), source, minutes,
+            factor?.let { (it * 100).roundToInt() }, subtasks,
+        )
+    }
+
     suspend fun analyze(
         mode: AnalyzerMode, title: String, course: String, description: String, deadlineAt: Long,
     ): AnalysisSuggestion {
-        val factor = _state.value.data?.let { PaceCalibration.factor(course, it.paceSamples()) }
         fun suggestion(difficulty: Int, minutes: Int, source: AnalysisSource, subtasks: List<String>) =
-            AnalysisSuggestion(
-                difficulty, PaceCalibration.adjustedMinutes(minutes, factor), source, minutes,
-                factor?.let { (it * 100).roundToInt() }, subtasks,
-            )
+            calibrated(course, difficulty, minutes, source, subtasks)
 
         if (mode == AnalyzerMode.OFFLINE) {
             val result = OfflineAnalyzer.analyze(title, description, deadlineAt, System.currentTimeMillis())
@@ -517,15 +559,7 @@ class TazerViewModel internal constructor(
         }
         val input = TaskAnalysisInput(title, course, description, Instant.ofEpochMilli(deadlineAt))
         val result = if (mode == AnalyzerMode.CLOUD) integration.analyzeCloud(input) else integration.analyzeByok(input)
-        if (mode == AnalyzerMode.CLOUD) {
-            try {
-                refreshSubscription()
-            } catch (failure: CancellationException) {
-                throw failure
-            } catch (_: IntegrationException) {
-                // Keep the valid result when refreshing the displayed quota is unavailable.
-            }
-        }
+        if (mode == AnalyzerMode.CLOUD) refreshQuietly()
         return suggestion(result.difficultyScore, result.estimatedMinutes, AnalysisSource.AI, result.subtasks)
     }
 

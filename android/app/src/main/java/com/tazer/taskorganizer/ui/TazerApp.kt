@@ -45,6 +45,7 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -58,6 +59,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.tazer.taskorganizer.MainActivity
 import com.tazer.taskorganizer.data.WorkSession
 import com.tazer.taskorganizer.data.WorkSessionState
 import com.tazer.taskorganizer.timer.FocusRuntime
@@ -177,7 +179,7 @@ private fun WorkspaceScreen(
     val closeEditor = { taskEditorId = null }
     LaunchedEffect(scheduleRequest) {
         if (scheduleRequest != 0) {
-            section = 1
+            section = if (scheduleRequest == MainActivity.STATISTICS_REQUEST) 4 else 1
             taskEditorId = null
             viewDay = null
             deferDialog = false
@@ -255,7 +257,9 @@ private fun WorkspaceScreen(
                         model.focus.focusSettings().preset,
                     )
                     2 -> sectionState.SaveableStateProvider("calendar") { CalendarScreen(workspace, state, zone, model) }
-                    3 -> SettingsScreen(workspace, state, model, theme, setTheme) { permissionDialog = true }
+                    3 -> SettingsScreen(workspace, state, model, theme, setTheme, permissionRefresh, requestNotifications) {
+                        permissionDialog = true
+                    }
                     4 -> sectionState.SaveableStateProvider("statistics") { StatisticsScreen(workspace, state, zone) }
                 }
             }
@@ -308,7 +312,7 @@ internal fun TimerIconButton(label: String, onClick: () -> Unit) {
     ) { TazerIcon(TazerGlyph.Timer, label) }
 }
 
-internal enum class TazerGlyph { Tasks, Timeline, Calendar, Settings, Statistics, Timer, Previous, Next, Down, Edit, Delete, Check, Add }
+internal enum class TazerGlyph { Tasks, Timeline, Calendar, Settings, Statistics, Timer, Previous, Next, Down, Edit, Delete, Check, Add, Camera, Image }
 
 @Composable
 internal fun TazerIcon(glyph: TazerGlyph, description: String? = null) {
@@ -385,6 +389,23 @@ internal fun TazerIcon(glyph: TazerGlyph, description: String? = null) {
             }
             TazerGlyph.Check -> { line(.20f, .51f, .42f, .72f); line(.42f, .72f, .80f, .29f) }
             TazerGlyph.Add -> { line(.22f, .5f, .78f, .5f); line(.5f, .22f, .5f, .78f) }
+            TazerGlyph.Camera -> {
+                drawRoundRect(ink, point(.12f, .30f), Size(size.width * .76f, size.height * .52f),
+                    CornerRadius(3.dp.toPx()), style = Stroke(1.8.dp.toPx()))
+                line(.36f, .30f, .42f, .19f)
+                line(.42f, .19f, .58f, .19f)
+                line(.58f, .19f, .64f, .30f)
+                drawCircle(ink, size.width * .14f, point(.5f, .56f), style = Stroke(1.8.dp.toPx()))
+            }
+            TazerGlyph.Image -> {
+                drawRoundRect(ink, point(.14f, .18f), Size(size.width * .72f, size.height * .64f),
+                    CornerRadius(3.dp.toPx()), style = Stroke(1.8.dp.toPx()))
+                line(.20f, .74f, .42f, .50f)
+                line(.42f, .50f, .58f, .66f)
+                line(.58f, .66f, .67f, .57f)
+                line(.67f, .57f, .80f, .70f)
+                drawCircle(ink, radius = 1.6.dp.toPx(), center = point(.66f, .36f))
+            }
         }
     }
 }

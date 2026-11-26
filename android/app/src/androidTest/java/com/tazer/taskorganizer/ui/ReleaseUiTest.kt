@@ -1,5 +1,21 @@
 package com.tazer.taskorganizer.ui
 
+import android.Manifest
+import android.app.Notification
+import android.app.NotificationManager
+import android.graphics.Bitmap
+import android.provider.MediaStore
+import androidx.core.content.FileProvider
+import com.tazer.taskorganizer.data.AnalysisSource
+import com.tazer.taskorganizer.data.SubtaskRepository
+import com.tazer.taskorganizer.domain.BriefingKind
+import com.tazer.taskorganizer.domain.BriefingSettings
+import com.tazer.taskorganizer.integration.AndroidIntegration
+import com.tazer.taskorganizer.timer.BriefingPreferences
+import com.tazer.taskorganizer.timer.DailyBriefingAlarms
+import java.io.FileOutputStream
+import java.time.LocalDateTime
+import org.junit.Assume.assumeTrue
 import android.app.Activity
 import android.app.Instrumentation
 import android.content.Intent
@@ -216,11 +232,12 @@ class ReleaseUiTest {
             launch()
             waitFor("Add task unavailable") { clickText("Tambah tugas") }
             waitFor("Deadline time control unavailable") {
-                find { it.contentDescription?.toString()?.startsWith("Pilih jam ") == true } != null || scrollUp()
+                val control = find { it.contentDescription?.toString()?.startsWith("Pilih jam ") == true }
+                control != null && bounds(control).bottom <= context.resources.displayMetrics.heightPixels * .8f || scrollUp()
             }
             val before = requireNotNull(find { it.contentDescription?.toString()?.startsWith("Pilih jam ") == true })
                 .contentDescription.toString()
-            assertTrue(tapNode(requireNotNull(find { it.contentDescription?.toString() == before })))
+            assertTrue(clickVisible(before))
             waitFor("Time dialog missing") { findText("Pilih jam") != null }
             waitFor("Native hour and minute wheels missing") { nodes { it.className?.toString() == "android.widget.NumberPicker" }.size == 2 }
             val wheels = nodes { it.className?.toString() == "android.widget.NumberPicker" }.sortedBy { bounds(it).left }
@@ -309,7 +326,7 @@ class ReleaseUiTest {
             launch()
             for (section in listOf("Kalender", "Pengaturan")) {
                 waitFor("$section unavailable") { clickText(section) }
-                waitFor("File picker button missing in $section") { clickText("Impor .ics") || scrollUp() }
+                waitFor("File picker button missing in $section") { clickVisible("Impor .ics") }
                 waitFor("Preview counts missing in $section") {
                     findText("1 acara kalender baru") != null && findText("1 blok jadwal tetap baru") != null
                 }
@@ -450,6 +467,177 @@ class ReleaseUiTest {
         ).use { it.readBytes() }
     }
 
+    @Test
+    fun galleryScanPrefillsTheNewTaskFormForReviewBeforeSaving() = runBlocking {
+        assumeTrue("Needs the loopback mock backend", AndroidIntegration(context).mockEnabled)
+        val title = "Laporan praktikum basis data"
+        val tasks = TaskRepository(TazerDatabase.getInstance(context))
+        val image = File(context.cacheDir, "scan").apply { mkdirs() }.resolve("ui-test.png")
+        FileOutputStream(image).use { output ->
+            Bitmap.createBitmap(1600, 900, Bitmap.Config.ARGB_8888).apply { eraseColor(android.graphics.Color.WHITE) }
+                .compress(Bitmap.CompressFormat.PNG, 100, output)
+        }
+        val picked = FileProvider.getUriForFile(context, "${context.packageName}.scan", image)
+        // An action-only filter also matches action-less intents, so add the image type and register after launch.
+        val filter = IntentFilter(MediaStore.ACTION_PICK_IMAGES).apply { addDataType("image/*") }
+        var monitor: Instrumentation.ActivityMonitor? = null
+        try {
+            activity = instrumentation.startActivitySync(Intent(context, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK))
+            waitFor("Mock PRO workspace did not open") { findText("Belum Selesai") != null || (clickText("PRO") && false) }
+            monitor = instrumentation.addMonitor(
+                filter, Instrumentation.ActivityResult(Activity.RESULT_OK, Intent().setData(picked)), true,
+            )
+            waitFor("Add task unavailable") { clickText("Tambah tugas") }
+            waitFor("Scan button missing") { clickText("Scan Foto / Screenshot") }
+            waitFor("Gallery choice missing") { clickText("Galeri / Screenshot") }
+            waitFor("Photo picker was not requested") { requireNotNull(monitor).hits > 0 }
+            waitFor("Scan did not prefill the title") { findText(title) != null }
+            for (expected in listOf("Basis Data", "Form terisi dari gambar", "• Jam deadline tidak terlihat, diatur ke 23:59.",
+                "23:59", "Baca modul normalisasi", "Gambar diagram ERD")) {
+                waitFor("Prefilled value missing: $expected") { findText(expected) != null || scrollUp() }
+            }
+            assertTrue("A scan must not save before review", tasks.observeTasks(MOCK_PRO).first().none { it.title == title })
+            waitFor("Save button unavailable") { clickVisible("Simpan tugas") }
+            waitFor("Reviewed task was not saved") { runBlocking { tasks.observeTasks(MOCK_PRO).first().any { it.title == title } } }
+            val saved = tasks.observeTasks(MOCK_PRO).first().first { it.title == title }
+            val zone = ZoneId.of(requireNotNull(tasks.observeProfile(MOCK_PRO).first()).zoneId)
+            assertEquals("Basis Data", saved.course)
+            assertEquals(LocalDateTime.of(2026, 12, 4, 23, 59).atZone(zone).toInstant().toEpochMilli(), saved.deadlineAt)
+            assertEquals(3, saved.difficultyScore)
+            assertEquals(AnalysisSource.AI, saved.analysisSource)
+            assertEquals(3, SubtaskRepository(TazerDatabase.getInstance(context)).observe(MOCK_PRO).first()
+                .count { it.taskId == saved.id })
+        } finally {
+            monitor?.let(instrumentation::removeMonitor)
+            tasks.observeTasks(MOCK_PRO).first().filter { it.title == title }.forEach { tasks.deleteTask(MOCK_PRO, it.id) }
+            image.delete()
+            finish()
+        }
+    }
+
+    @Test
+    fun scanExplainsWhyItNeedsProOrByokOnOtherAccounts() {
+        try {
+            launch()
+            waitFor("Add task unavailable") { clickText("Tambah tugas") }
+            waitFor("Scan availability is not explained") {
+                findText("Tersedia untuk akun PRO atau BYOK Gemini. Gambar hanya diproses saat kamu memindainya.") != null
+            }
+            waitFor("Scan button missing") { clickText("Scan Foto / Screenshot") }
+            waitFor("Non-PRO scan message missing") { findText("Scan foto tersedia untuk akun PRO atau BYOK Gemini.") != null }
+            assertEquals(null, findText("Galeri / Screenshot"))
+        } finally {
+            finish()
+        }
+    }
+
+    @Test
+    fun dailyBriefingSettingsUseSpinnersPersistAndScheduleAlarms() = runBlocking {
+        val preferences = BriefingPreferences(context)
+        val original = preferences.read()
+        automation.grantRuntimePermission(context.packageName, Manifest.permission.POST_NOTIFICATIONS)
+        preferences.save(BriefingSettings())
+        DailyBriefingAlarms.reschedule(context)
+        try {
+            launch()
+            waitFor("Settings unavailable") { clickText("Pengaturan") }
+            waitFor("Daily Briefing section missing") { findText("Smart Daily Briefing") != null }
+            assertTrue(!DailyBriefingAlarms.scheduled(context, BriefingKind.MORNING))
+            waitFor("Morning switch unavailable") { tapSwitch("Briefing pagi") }
+            waitFor("Morning briefing was not saved and scheduled") {
+                preferences.read().morningEnabled && DailyBriefingAlarms.scheduled(context, BriefingKind.MORNING)
+            }
+            val exact = FocusRuntime.get(context).canScheduleExactAlarms()
+            waitFor("Exact alarm hint must show only without exact access") {
+                (findText("Izinkan alarm tepat waktu") != null) == !exact
+            }
+            waitFor("Morning time button missing") { clickVisible("Pilih jam 07:00") }
+            waitFor("Spinner time picker did not open") {
+                findText("Pilih jam") != null && nodes { it.className == "android.widget.NumberPicker" }.size == 2
+            }
+            // The left wheel is the hour; tapping below its centre increments it like a user would.
+            val hour = bounds(nodes { it.className?.toString() == "android.widget.NumberPicker" }.minBy { bounds(it).left })
+            tap(hour.exactCenterX(), hour.top + hour.height() * .82f)
+            SystemClock.sleep(500)
+            waitFor("Apply unavailable") { clickText("Terapkan") }
+            waitFor("Morning time was not saved") { preferences.read().morningMinute == 8 * 60 }
+
+            finish()
+            launch()
+            waitFor("Settings unavailable after restart") { clickText("Pengaturan") }
+            waitFor("Saved morning time missing after restart") { findText("Pilih jam 08:00") != null }
+            assertTrue("Morning switch lost its state", switchChecked("Briefing pagi"))
+            waitFor("Evening switch unavailable") { tapSwitch("Review malam") }
+            waitFor("Evening review was not scheduled") {
+                preferences.read().eveningEnabled && DailyBriefingAlarms.scheduled(context, BriefingKind.EVENING)
+            }
+            assertEquals(21 * 60, preferences.read().eveningMinute)
+            waitFor("Morning switch unavailable") { tapSwitch("Briefing pagi") }
+            waitFor("Disabled briefing alarm was not cancelled") {
+                !preferences.read().morningEnabled && !DailyBriefingAlarms.scheduled(context, BriefingKind.MORNING)
+            }
+        } finally {
+            finish()
+            preferences.save(original)
+            DailyBriefingAlarms.reschedule(context)
+        }
+    }
+
+    @Test
+    fun briefingNotificationsUseTheirOwnChannelAndOpenScheduleOrStatistics() = runBlocking {
+        val preferences = BriefingPreferences(context)
+        val original = preferences.read()
+        val manager = context.getSystemService(NotificationManager::class.java)
+        automation.grantRuntimePermission(context.packageName, Manifest.permission.POST_NOTIFICATIONS)
+        try {
+            launch() // Establishes the demo owner used by the background briefing.
+            preferences.save(BriefingSettings(morningEnabled = true, eveningEnabled = true))
+            for (kind in BriefingKind.entries) DailyBriefingAlarms.deliver(context, kind)
+            val posted = manager.activeNotifications.filter { it.id == 4100 || it.id == 4101 }.associateBy { it.id }
+            assertEquals(setOf(4100, 4101), posted.keys)
+            posted.values.forEach { assertEquals("daily_briefing", it.notification.channelId) }
+            val morning = requireNotNull(posted[4100]).notification
+            assertTrue(morning.extras.getString(Notification.EXTRA_TITLE).orEmpty().startsWith("Hari ini"))
+            for (id in listOf("focus_timer", "focus_reminders_v2", "focus_overtime_v2")) {
+                assertTrue("Focus channel $id changed", manager.getNotificationChannel(id) != null)
+            }
+
+            requireNotNull(posted[4101]).notification.contentIntent.send()
+            waitFor("Evening review did not open Statistics") { navigationSelected("Statistik") }
+            SystemClock.sleep(500)
+            morning.contentIntent.send()
+            waitFor("Morning briefing did not open today's schedule") { navigationSelected("Jadwal") }
+
+            preferences.save(BriefingSettings())
+            manager.cancel(4100)
+            DailyBriefingAlarms.deliver(context, BriefingKind.MORNING)
+            assertTrue("A disabled briefing must not post", manager.activeNotifications.none { it.id == 4100 })
+        } finally {
+            manager.cancel(4100)
+            manager.cancel(4101)
+            finish()
+            preferences.save(original)
+            DailyBriefingAlarms.reschedule(context)
+        }
+    }
+
+    private fun switchNode(label: String) = nodes {
+        it.isCheckable && (it.text?.toString()?.contains(label) == true || hasText(it, label))
+    }.firstOrNull()
+    private fun navigationSelected(label: String): Boolean {
+        if (Build.VERSION.SDK_INT >= 33) automation.clearCache() // Selection changes do not always refresh cached nodes.
+        return nodes { it.text?.toString() == label }.any { node -> generateSequence(node) { it.parent }.any { it.isSelected } }
+    }
+    /** Scrolls until the target is on screen, then clicks it through accessibility, independent of position. */
+    private fun clickVisible(text: String): Boolean {
+        var node = find { it.text?.toString() == text || it.contentDescription?.toString() == text } ?: return scrollUp()
+        while (!node.isClickable) node = node.parent ?: return false
+        return node.isEnabled && node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+    }
+    private fun tapSwitch(label: String): Boolean = switchNode(label)?.let(::tapNode) == true
+    private fun switchChecked(label: String): Boolean = switchNode(label)?.isChecked == true
+
     private fun waitFor(message: String, condition: () -> Boolean) {
         val deadline = SystemClock.elapsedRealtime() + 12_000L
         while (SystemClock.elapsedRealtime() < deadline) {
@@ -519,6 +707,7 @@ class ReleaseUiTest {
 
     private companion object {
         const val UID = "tazer-demo-local"
+        const val MOCK_PRO = "demo-pro"
         val DateDescription = Regex("^\\p{L}+, \\d")
     }
 }

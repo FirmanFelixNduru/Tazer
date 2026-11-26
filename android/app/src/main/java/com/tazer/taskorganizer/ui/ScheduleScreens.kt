@@ -320,7 +320,8 @@ private fun ScheduleTag(label: String) {
 @Composable
 internal fun SettingsScreen(
     workspace: Workspace, state: TazerState, model: TazerViewModel, theme: TazerThemeMode,
-    setTheme: (TazerThemeMode) -> Unit, openFocusSettings: () -> Unit,
+    setTheme: (TazerThemeMode) -> Unit, permissionRefresh: Int, requestNotifications: () -> Unit,
+    openFocusSettings: () -> Unit,
 ) {
     var editId by rememberSaveable { mutableStateOf<String?>(null) }
     var deleteId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -330,6 +331,8 @@ internal fun SettingsScreen(
     LazyColumn(contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp)) {
         item {
             ThemeSetting(theme, setTheme)
+            HorizontalDivider(modifier = Modifier.padding(vertical = 14.dp))
+            DailyBriefingSetting(permissionRefresh, requestNotifications)
             HorizontalDivider(modifier = Modifier.padding(vertical = 14.dp))
             ReleaseUpdateSetting()
             HorizontalDivider(modifier = Modifier.padding(vertical = 14.dp))

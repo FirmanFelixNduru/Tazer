@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import com.tazer.taskorganizer.BuildConfig
 import java.time.LocalDate
+import java.time.ZoneId
 import java.time.ZoneOffset
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -171,6 +172,20 @@ class AndroidIntegration(context: Context) {
         }
     }
 
+    /** PRO: one scan uses one server analysis slot. The image is sent once and kept only in memory. */
+    suspend fun extractImageCloud(jpeg: ByteArray, today: LocalDate, zone: ZoneId): ImageExtraction = serialized {
+        val payload = scanBody(jpeg, today, zone)
+        val session = session()
+        if (subscription(session).tier != SubscriptionTier.PRO) fail(IntegrationError.PRO_REQUIRED)
+        backend(session, "/extract-task-image", payload, SCAN_TIMEOUT_MS).imageExtraction()
+    }
+
+    suspend fun extractImageByok(jpeg: ByteArray, today: LocalDate, zone: ZoneId): ImageExtraction = serialized {
+        val payload = scanBody(jpeg, today, zone)
+        val credential = vault.read(requireByok()) ?: fail(IntegrationError.BYOK_KEY_MISSING)
+        extractWithGemini(payload, credential)
+    }
+
     suspend fun analyzeByok(input: TaskAnalysisInput): TaskAnalysisResult = serialized {
         val payload = input.toJson()
         val uid = requireByok()
@@ -276,7 +291,9 @@ class AndroidIntegration(context: Context) {
         if (!enabled) fail(IntegrationError.NOT_CONFIGURED)
     }
 
-    private fun backend(session: Session, path: String, payload: JSONObject? = null): JSONObject {
+    private fun backend(
+        session: Session, path: String, payload: JSONObject? = null, timeoutMs: Int = 8_000,
+    ): JSONObject {
         val origin = if (session.mock) BuildConfig.MOCK_URL else BuildConfig.BACKEND_URL
         fun request() = call(
             origin + path,
@@ -286,6 +303,7 @@ class AndroidIntegration(context: Context) {
                 if (path == "/analyze-task") put("X-Tazer-Analysis-Subtasks", "1")
             },
             payload,
+            timeoutMs = timeoutMs,
         )
         try {
             val first = request()

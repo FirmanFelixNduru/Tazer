@@ -37,6 +37,7 @@ Supabase Free menyediakan Auth dan PostgreSQL. Android memakai email/password de
 | `GET /auth/session` | Authorization: Bearer | `200 { "uid": "u1" }` |
 | `GET /subscription` | Authorization: Bearer | `200 { "tier": "PRO", "monthlyLimit": 100, "remaining": 99, "resetsAt": "2026-12-01T00:00:00Z" }` |
 | `POST /analyze-task` | Bearer dan JSON input | `200 { "difficultyScore": 4, "estimatedMinutes": 150 }` |
+| `POST /extract-task-image` | Bearer dan JSON gambar | `200` hasil ekstraksi tugas dari foto atau screenshot. Lihat [Scan tugas dari gambar](#scan-tugas-dari-gambar). |
 | `GET /health` | Tanpa autentikasi | `200` jika binding siap atau `503` jika belum lengkap. Respons hanya memuat `ready` dan boolean konfigurasi publik `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `GEMINI_MODEL`. Pemeriksaan ini membaca konfigurasi tanpa memanggil layanan eksternal. |
 
 ### Entitlement akun dan kuota bulanan
@@ -91,6 +92,33 @@ Gemini API Free melalui Google AI Studio menjadi primary. Groq Free menjadi fall
 ```
 
 Header `X-Tazer-Analysis-Subtasks: 1` meminta properti tambahan `subtasks` jika model mengembalikan daftar valid. Klien lama tetap mendapat dua field lama. Saran AI/BYOK/offline tampil sebagai langkah yang bisa diterapkan oleh user. Edit manual tetap tersedia. [Aturan analyzer offline dan kalibrasi](SCHEDULER_SPEC.md#analisis-offline)
+
+### Scan tugas dari gambar
+
+Form **Tambah tugas** menyediakan **Scan Foto / Screenshot** melalui Android Photo Picker tanpa izin storage, atau kamera lewat `FileProvider`. Izin kamera diminta hanya saat **Ambil Foto** dipilih. Perangkat memutar gambar sesuai EXIF, memperkecil sisi terpanjang menjadi maksimal 1280 px, lalu mengirim JPEG kualitas 80 (60 jika masih di atas batas). Hasil hanya mengisi form. Tugas tersimpan setelah user meninjau dan mengetuk **Simpan tugas**.
+
+```json
+{ "mimeType": "image/jpeg", "imageBase64": "<base64>", "localDate": "2026-11-26", "timeZone": "Asia/Jakarta" }
+```
+
+1. Body memuat tepat empat field. `mimeType` hanya `image/jpeg`, `image/png`, atau `image/webp`, dan signature byte gambar harus cocok. `imageBase64` adalah base64 kanonis dengan ukuran terdekode maksimal 2 MiB. `localDate` adalah tanggal sipil perangkat dan `timeZone` adalah ID IANA profil. Body di atas 2 MiB × 4/3 + 1 KiB atau gambar di atas 2 MiB menghasilkan `413`. Field lain yang tidak valid menghasilkan `400`.
+2. Urutan server sama dengan analyzer: verifikasi sesi, validasi input, cek tier `PRO`, lalu ambil satu slot kuota bulanan yang sama dengan `/analyze-task`. Input tidak valid dan request tanpa otorisasi tidak memanggil AI dan tidak memotong kuota. Gambar hanya ada di memori selama request. Server tidak menyimpan atau me-log gambar maupun hasilnya.
+3. Server memanggil Gemini Free (`GEMINI_MODEL`) dengan `inlineData` dan prompt terstruktur yang memuat `localDate` dan `timeZone`, dengan timeout 25 detik. Groq tidak dipakai karena model yang dikonfigurasi hanya teks. BYOK Gemini mengirim body yang sama langsung dari perangkat ke Gemini. BYOK Groq mendapat pesan bahwa scan memerlukan Gemini.
+
+```json
+{
+  "title": "Tugas 3 – Pemrograman Web Lanjut",
+  "course": "Pemrograman Web Lanjut",
+  "description": "Buat aplikasi to-do list dengan React dan REST API.",
+  "deadlineIso": "2026-12-04T23:00",
+  "difficultyScore": 3,
+  "estimatedMinutes": 180,
+  "subtasks": ["Rancang komponen", "Implementasikan CRUD", "Kumpulkan laporan"],
+  "warnings": []
+}
+```
+
+4. `title` 1–120 karakter, `course` 0–120, `description` 0–4000, `difficultyScore` 1–5, dan `estimatedMinutes` 1–10080 wajib valid. Jika tidak, respons menjadi `502 AI_UNAVAILABLE` dan slot tetap terpakai. `deadlineIso` adalah waktu lokal `YYYY-MM-DDTHH:mm` pada `timeZone` request, atau `null` jika gambar tidak memuat tanggal. Tanggal yang tidak terbaca menjadi `null` dengan peringatan. `subtasks` berisi 3–5 langkah, masing-masing 1–120 karakter, atau array kosong. `warnings` berisi maksimal 3 catatan, masing-masing 1–200 karakter. Android menampilkan peringatan dan mengalibrasi estimasi dengan [kalibrasi personal](SCHEDULER_SPEC.md#analisis-offline).
 
 ### Envelope error
 

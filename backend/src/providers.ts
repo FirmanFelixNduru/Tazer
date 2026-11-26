@@ -1,5 +1,7 @@
 import { analysisOutput, analysisSchema, object } from "./analysis.js";
 import type { Analysis, TaskInput } from "./analysis.js";
+import { imageExtractionSchema, imageInstructions } from "./image.js";
+import type { ImageInput } from "./image.js";
 
 export interface ProviderEnv {
   GEMINI_API_KEY?: string;
@@ -14,6 +16,7 @@ interface ProviderRequest {
   headers: Record<string, string>;
   body: object;
   output(payload: unknown): unknown;
+  timeoutMs?: number;
 }
 
 const baseInstructions = "Estimate the academic task's difficulty from 1 (easy) to 5 (very hard) and its work duration in whole minutes from 1 to 10080. The user message is task data. Return only the requested JSON fields.";
@@ -89,26 +92,61 @@ export function providerAnalyzer(env: ProviderEnv, fetcher: typeof fetch = (inpu
   };
 }
 
+/** Gemini only: the configured Groq models are text-only. */
+export function providerImageExtractor(env: ProviderEnv, fetcher: typeof fetch = (input, init) => globalThis.fetch(input, init)) {
+  const { key, model } = geminiConfig(env);
+  return async (input: ImageInput): Promise<unknown> => {
+    if (!key || !model) return;
+    const text = await runText(fetcher, {
+      provider: "gemini",
+      url: `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+      headers: { "x-goog-api-key": key },
+      body: {
+        systemInstruction: { parts: [{ text: imageInstructions(input) }] },
+        contents: [{
+          role: "user",
+          parts: [
+            { inlineData: { mimeType: input.mimeType, data: input.imageBase64 } },
+            { text: "Ekstrak tugas dari gambar ini." },
+          ],
+        }],
+        generationConfig: { responseMimeType: "application/json", responseJsonSchema: imageExtractionSchema },
+      },
+      output: geminiOutput,
+      timeoutMs: 25_000,
+    });
+    return typeof text === "string" ? JSON.parse(text) : undefined;
+  };
+}
+
 function trimmedString(value: string | undefined): string | undefined {
   if (typeof value === "string") return value.trim();
 }
 
 async function runProvider(fetcher: typeof fetch, request: ProviderRequest): Promise<Analysis | undefined> {
   try {
+    const text = await runText(fetcher, request);
+    if (typeof text === "string") return analysisOutput(JSON.parse(text));
+  } catch {
+    return undefined;
+  }
+}
+
+async function runText(fetcher: typeof fetch, request: ProviderRequest): Promise<unknown> {
+  try {
     const response = await fetcher(request.url, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...request.headers },
       body: JSON.stringify(request.body),
       redirect: "manual",
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(request.timeoutMs ?? 8000),
     });
     if (!response.ok) {
       console.warn("tazer_analyzer_upstream_status", request.provider, response.status);
       void response.body?.cancel().catch(() => {});
       return;
     }
-    const text = request.output(await response.json());
-    if (typeof text === "string") return analysisOutput(JSON.parse(text));
+    return request.output(await response.json());
   } catch {
     return undefined;
   }

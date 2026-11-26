@@ -24,7 +24,13 @@ class FocusReceiver : BroadcastReceiver() {
             try {
                 withTimeout(9_000L) {
                     val runtime = FocusRuntime.get(application)
-                    if (event == null) runtime.onSystemChange(action) else runtime.onEvent(event)
+                    if (event == null) {
+                        // Boot, clock, and zone changes also restore the Daily Briefing alarms.
+                        DailyBriefingAlarms.reschedule(application)
+                        runtime.onSystemChange(action)
+                    } else {
+                        runtime.onEvent(event)
+                    }
                 }
             } catch (cancelled: CancellationException) {
                 Log.w(TAG, "Focus broadcast interrupted", cancelled)

@@ -1,5 +1,7 @@
 import { analysisOutput, taskInput } from "./analysis.js";
 import type { TaskInput } from "./analysis.js";
+import { imageExtractionOutput, imageInput, MAX_IMAGE_BODY_BYTES } from "./image.js";
+import type { ImageInput } from "./image.js";
 
 export type Tier = "FREE" | "PRO" | "BYOK";
 
@@ -25,6 +27,7 @@ export interface Dependencies {
   verify(token: string): Promise<Session>;
   entitlement(uid: string, consume: boolean): Promise<Subscription & { granted: boolean }>;
   analyze(input: TaskInput, includeSubtasks: boolean): Promise<unknown>;
+  extractImage(input: ImageInput): Promise<unknown>;
   now?: () => Date;
   readiness?: () => Readiness;
 }
@@ -33,7 +36,7 @@ const MAX_BODY_BYTES = 32 * 1024;
 
 const errors = {
   VALIDATION_ERROR: [400, "Input analisis tidak valid."],
-  PAYLOAD_TOO_LARGE: [413, "Ukuran input analisis melebihi 32 KiB."],
+  PAYLOAD_TOO_LARGE: [413, "Ukuran input melebihi batas."],
   INVALID_AUTH: [401, "Sesi tidak valid."],
   EMAIL_UNVERIFIED: [403, "Verifikasi email diperlukan."],
   PRO_REQUIRED: [403, "Analisis melalui server memerlukan PRO."],
@@ -53,8 +56,10 @@ function error(code: keyof typeof errors, headers?: Record<string, string>) {
   return json({ error: { code, message } }, status, headers);
 }
 
-async function readTask(request: Request): Promise<TaskInput | undefined | "too-large"> {
-  if (Number(request.headers.get("content-length")) > MAX_BODY_BYTES) return "too-large";
+const tooLarge = Symbol("too-large");
+
+async function readJson(request: Request, maxBytes: number): Promise<unknown> {
+  if (Number(request.headers.get("content-length")) > maxBytes) return tooLarge;
   const mime = request.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase();
   if (mime !== "application/json" || !request.body) return;
 
@@ -67,13 +72,13 @@ async function readTask(request: Request): Promise<TaskInput | undefined | "too-
       const chunk = await reader.read();
       if (chunk.done) break;
       size += chunk.value.byteLength;
-      if (size > MAX_BODY_BYTES) {
+      if (size > maxBytes) {
         void reader.cancel().catch(() => {});
-        return "too-large";
+        return tooLarge;
       }
       text += decoder.decode(chunk.value, { stream: true });
     }
-    return taskInput(JSON.parse(text + decoder.decode()));
+    return JSON.parse(text + decoder.decode());
   } catch {
     return undefined;
   } finally {
@@ -89,8 +94,10 @@ export function createHandler(deps: Dependencies) {
       const health = deps.readiness();
       return json(health, health.ready ? 200 : 503);
     }
-    const method = path === "/analyze-task" ? "POST" : "GET";
-    if (path !== "/auth/session" && path !== "/subscription" && path !== "/analyze-task") {
+    const image = path === "/extract-task-image";
+    const consuming = image || path === "/analyze-task";
+    const method = consuming ? "POST" : "GET";
+    if (path !== "/auth/session" && path !== "/subscription" && !consuming) {
       return error("NOT_FOUND");
     }
     if (request.method !== method) return error("METHOD_NOT_ALLOWED", { Allow: method });
@@ -108,8 +115,11 @@ export function createHandler(deps: Dependencies) {
     if (session === "unverified") return error("EMAIL_UNVERIFIED");
     if (path === "/auth/session") return json({ uid: session.uid });
 
-    const consuming = path === "/analyze-task";
-    const input = consuming ? await readTask(request) : undefined;
+    let input: TaskInput | ImageInput | "too-large" | undefined;
+    if (consuming) {
+      const body = await readJson(request, image ? MAX_IMAGE_BODY_BYTES : MAX_BODY_BYTES);
+      input = body === tooLarge ? "too-large" : image ? imageInput(body) : taskInput(body);
+    }
     if (input === "too-large") return error("PAYLOAD_TOO_LARGE");
     if (consuming && !input) return error("VALIDATION_ERROR");
 
@@ -129,8 +139,14 @@ export function createHandler(deps: Dependencies) {
     }
 
     try {
+      if (image) {
+        // The image only lives in this request; it is never logged or stored.
+        const extraction = imageExtractionOutput(await deps.extractImage(input as ImageInput));
+        if (extraction) return json(extraction);
+        return error("AI_UNAVAILABLE");
+      }
       const includeSubtasks = request.headers.get("X-Tazer-Analysis-Subtasks") === "1";
-      const result = analysisOutput(await deps.analyze(input, includeSubtasks));
+      const result = analysisOutput(await deps.analyze(input as TaskInput, includeSubtasks));
       if (result) {
         // Older Android builds require exactly two response fields.
         if (includeSubtasks) return json(result);

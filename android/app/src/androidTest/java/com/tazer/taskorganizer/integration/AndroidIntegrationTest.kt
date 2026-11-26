@@ -1,10 +1,15 @@
 package com.tazer.taskorganizer.integration
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Color
+import android.media.ExifInterface
 import android.net.Uri
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
+import java.io.FileOutputStream
 import java.time.Instant
 import java.util.UUID
 import kotlinx.coroutines.runBlocking
@@ -183,6 +188,39 @@ class AndroidIntegrationTest {
         assertEquals(0, byok.subscription.remaining)
         integration.signOut()
         assertNull(integration.restoreAccount())
+    }
+
+    @Test
+    fun scanCompressionRotatesDownsizesAndStaysWithinTheLimit() {
+        val directory = File(context.cacheDir, "scan").apply { mkdirs() }
+        val photo = directory.resolve("exif-test.jpg")
+        val text = directory.resolve("not-an-image.jpg")
+        try {
+            FileOutputStream(photo).use { output ->
+                Bitmap.createBitmap(3000, 1000, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.RED) }
+                    .compress(Bitmap.CompressFormat.JPEG, 95, output)
+            }
+            ExifInterface(photo.path).apply {
+                setAttribute(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_ROTATE_90.toString())
+                saveAttributes()
+            }
+            val jpeg = compressForScan(context.contentResolver, Uri.fromFile(photo))
+            assertTrue(jpeg.size in 1..SCAN_MAX_BYTES)
+            assertEquals(listOf(0xFF, 0xD8, 0xFF), jpeg.take(3).map { it.toInt() and 0xFF })
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size, bounds)
+            assertEquals(427, bounds.outWidth)
+            assertEquals(1280, bounds.outHeight)
+
+            text.writeText("bukan gambar")
+            expectError(IntegrationError.IMAGE_UNREADABLE) { compressForScan(context.contentResolver, Uri.fromFile(text)) }
+            expectError(IntegrationError.IMAGE_UNREADABLE) {
+                compressForScan(context.contentResolver, Uri.fromFile(directory.resolve("missing.jpg")))
+            }
+        } finally {
+            photo.delete()
+            text.delete()
+        }
     }
 
     private fun expectError(expected: IntegrationError, action: () -> Unit) {

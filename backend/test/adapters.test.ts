@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { analysisSchema } from "../src/analysis.js";
 import { createHandler } from "../src/handler.js";
-import { providerAnalyzer } from "../src/providers.js";
+import { providerAnalyzer, providerImageExtractor } from "../src/providers.js";
 import { supabase } from "../src/supabase.js";
 import worker from "../src/worker.js";
 
@@ -70,7 +70,7 @@ test("Supabase auth then atomic quota, then Gemini and Groq fallback with one ch
     assert.deepEqual(JSON.parse(body.messages[1].content), input);
     return Response.json({ choices: [{ finish_reason: "stop", message: { content: JSON.stringify(suggested), refusal: null } }] });
   };
-  const handle = createHandler({ ...supabase(env, fetcher), analyze: providerAnalyzer(env, fetcher) });
+  const handle = createHandler({ ...supabase(env, fetcher), analyze: providerAnalyzer(env, fetcher), extractImage: providerImageExtractor(env, fetcher) });
   const response = await handle(analyzeRequest());
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), suggested);
@@ -100,7 +100,7 @@ test("Supabase rejects bad, expired, revoked, or unverified sessions and fails c
       calls++;
       return Response.json(body, { status: upstreamStatus });
     };
-    const handle = createHandler({ ...supabase(env, fetcher), analyze: providerAnalyzer(env, fetcher) });
+    const handle = createHandler({ ...supabase(env, fetcher), analyze: providerAnalyzer(env, fetcher), extractImage: providerImageExtractor(env, fetcher) });
     const response = await handle(analyzeRequest());
     assert.equal(response.status, status);
     assert.equal((await response.json()).error.code, code);
@@ -118,7 +118,7 @@ test("malformed or unavailable quota RPC never invokes providers", async () => {
   ]) {
     let calls = 0;
     const fetcher: typeof fetch = async () => ++calls === 1 ? Response.json(auth) : reply;
-    const handle = createHandler({ ...supabase(env, fetcher), analyze: providerAnalyzer(env, fetcher) });
+    const handle = createHandler({ ...supabase(env, fetcher), analyze: providerAnalyzer(env, fetcher), extractImage: providerImageExtractor(env, fetcher) });
     const response = await handle(analyzeRequest());
     assert.equal(response.status, 503);
     assert.deepEqual(await response.json(), {
@@ -248,7 +248,7 @@ test("Worker endpoints still require a Bearer token whether or not the Worker is
     throw new Error("Unexpected upstream request");
   });
   for (const config of [env, {}]) {
-    for (const [method, path] of [["GET", "/auth/session"], ["GET", "/subscription"], ["POST", "/analyze-task"]]) {
+    for (const [method, path] of [["GET", "/auth/session"], ["GET", "/subscription"], ["POST", "/analyze-task"], ["POST", "/extract-task-image"]]) {
       const response = await worker.fetch(new Request(`https://backend.example.invalid${path}`, { method }), config);
       assert.equal(response.status, 401, path);
       assert.equal(response.headers.get("WWW-Authenticate"), "Bearer");

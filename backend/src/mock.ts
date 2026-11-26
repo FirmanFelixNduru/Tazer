@@ -50,5 +50,21 @@ export function mockDependencies(now = () => new Date()): Dependencies {
         ],
       };
     },
+    async extractImage() {
+      return {
+        title: "Laporan praktikum basis data",
+        course: "Basis Data",
+        description: "Buat laporan normalisasi tabel dan sertakan diagram ERD.",
+        deadlineIso: "2026-12-04T23:59",
+        difficultyScore: 3,
+        estimatedMinutes: 120,
+        subtasks: [
+          "Baca modul normalisasi",
+          "Gambar diagram ERD",
+          "Tulis laporan dan kumpulkan",
+        ],
+        warnings: ["Jam deadline tidak terlihat, diatur ke 23:59."],
+      };
+    },
   };
 }

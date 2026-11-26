@@ -1,5 +1,6 @@
 package com.tazer.taskorganizer.ui
 
+import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -37,6 +38,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -246,14 +248,17 @@ internal fun TaskEditor(task: Task?, zone: ZoneId, tier: SubscriptionTier?, busy
     var subtaskEditKey by rememberSaveable(task?.id) { mutableStateOf<String?>(null) }
     var proposedTitles by rememberSaveable(task?.id) { mutableStateOf(arrayListOf<String>()) }
     var analysisMode by remember(task?.id) { mutableStateOf<AnalyzerMode?>(null) }
+    var scanning by remember(task?.id) { mutableStateOf(false) }
+    var scanNotes by rememberSaveable(task?.id) { mutableStateOf<ArrayList<String>?>(null) }
     val scope = rememberCoroutineScope()
+    val resolver = LocalContext.current.contentResolver
     val day = LocalDate.parse(date)
     val unchangedDeadline = task != null && day == base.toLocalDate() && minute == base.hour * 60 + base.minute
     val deadline = if (unchangedDeadline) requireNotNull(task).deadlineAt
         else day.atTime(minute / 60, minute % 60).atZone(zone).toInstant().toEpochMilli()
     val difficultyValue = difficulty.toIntOrNull()?.takeIf { it in 1..5 }
     val minutesValue = minutes.toIntOrNull()?.takeIf { it in 1..10080 }
-    val editable = analysisMode == null && !busy
+    val editable = analysisMode == null && !scanning && !busy
     val validText = title.trim().length in 1..120 && course.trim().length in 1..120 && description.length <= 4000
     val analyze: (AnalyzerMode) -> Unit = { mode ->
         analysisMode = mode
@@ -279,10 +284,57 @@ internal fun TaskEditor(task: Task?, zone: ZoneId, tier: SubscriptionTier?, busy
             }
         }
     }
+    val scan: (Uri) -> Unit = { uri ->
+        scanning = true
+        scope.launch {
+            try {
+                val (found, analysis) = model.scanImage(resolver, uri, zone)
+                title = found.title
+                course = found.course
+                description = found.description
+                found.deadline?.let {
+                    date = it.toLocalDate().toString()
+                    minute = it.hour * 60 + it.minute
+                }
+                difficulty = analysis.difficulty.toString()
+                minutes = analysis.minutes.toString()
+                source = analysis.source.name
+                baselineMinutes = analysis.analyzerBaselineMinutes
+                calibrationPercent = analysis.calibrationPercent
+                val existing = checklist.map { it.draft.title.lowercase(Locale.ROOT) }.toSet()
+                val steps = found.subtasks.distinctBy { it.lowercase(Locale.ROOT) }
+                    .filter { it.lowercase(Locale.ROOT) !in existing }.take(MaxSubtasks - checklist.size)
+                if (model.subtasksAvailable) checklist = checklist + steps.map(::ChecklistItem)
+                scanNotes = ArrayList(buildList {
+                    addAll(found.warnings)
+                    if (found.deadline == null && found.warnings.none { "deadline" in it.lowercase(Locale.ROOT) }) {
+                        add("Deadline tidak terlihat pada gambar. Atur tanggal dan jam secara manual.")
+                    }
+                    if (found.course.isBlank()) add("Mata kuliah tidak terlihat. Isi secara manual.")
+                })
+            } catch (failure: CancellationException) {
+                throw failure
+            } catch (failure: IntegrationException) {
+                scanFailureMessage(failure.code)?.let(model::showMessage) ?: model.reportIntegrationFailure(failure)
+            } finally {
+                scanning = false
+            }
+        }
+    }
     Column(
         Modifier.verticalScroll(rememberScrollState()).imePadding().padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        if (task == null) {
+            ScanImageButton(
+                available = tier == SubscriptionTier.PRO || tier == SubscriptionTier.BYOK,
+                enabled = editable,
+                scanning = scanning,
+                onImage = scan,
+                onMessage = model::showMessage,
+            )
+            scanNotes?.let { ScanReview(it) }
+        }
         OutlinedTextField(title, { title = it }, label = { Text("Judul") }, singleLine = true, enabled = editable, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(course, { course = it }, label = { Text("Mata kuliah") }, singleLine = true, enabled = editable, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(description, { description = it }, label = { Text("Deskripsi") }, minLines = 3, enabled = editable, modifier = Modifier.fillMaxWidth())

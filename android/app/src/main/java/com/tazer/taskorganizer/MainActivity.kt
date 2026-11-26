@@ -13,16 +13,20 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.lifecycleScope
 import com.tazer.taskorganizer.data.CalendarRepository
 import com.tazer.taskorganizer.data.CloudSync
 import com.tazer.taskorganizer.data.SubtaskRepository
 import com.tazer.taskorganizer.data.TazerDatabase
 import com.tazer.taskorganizer.integration.AndroidIntegration
 import com.tazer.taskorganizer.integration.networkAvailability
+import com.tazer.taskorganizer.timer.DailyBriefingAlarms
 import com.tazer.taskorganizer.timer.FocusRuntime
 import com.tazer.taskorganizer.ui.TazerApp
 import com.tazer.taskorganizer.ui.TazerViewModel
 import com.tazer.taskorganizer.widget.FocusWidget
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private lateinit var model: TazerViewModel
@@ -51,6 +55,8 @@ class MainActivity : ComponentActivity() {
         }
         model = ViewModelProvider(this, factory)[TazerViewModel::class.java]
         routeIntent(intent)
+        // Restores briefing alarms after an in-place upgrade or a force stop.
+        lifecycleScope.launch(Dispatchers.IO) { DailyBriefingAlarms.reschedule(applicationContext) }
         setContent {
             TazerApp(model, ::startActivity, ::requestNotifications, permissionRefresh,
                 scheduleRequest = scheduleRequest, onScheduleOpened = { scheduleRequest = 0 })
@@ -94,6 +100,12 @@ class MainActivity : ComponentActivity() {
                 openSchedule()
                 model.restoreSession()
             }
+            intent.action == DailyBriefingAlarms.ACTION_OPEN_STATISTICS -> {
+                intent.action = null
+                model.closeFocus()
+                scheduleRequest = STATISTICS_REQUEST
+                model.restoreSession()
+            }
             uri?.scheme == "tazer" -> {
                 intent.data = null
                 model.handleAuthCallback(uri)
@@ -118,7 +130,8 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private companion object {
-        const val SCHEDULE_REQUEST = "widget_schedule_request"
+    internal companion object {
+        private const val SCHEDULE_REQUEST = "widget_schedule_request"
+        const val STATISTICS_REQUEST = 2
     }
 }

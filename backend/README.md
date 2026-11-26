@@ -27,6 +27,8 @@ Invoke-RestMethod "$base/analyze-task" -Method Post -Headers $headers -ContentTy
 Invoke-RestMethod "$base/subscription" -Headers $headers
 ```
 
+To smoke-test a task scan, send `{"mimeType":"image/jpeg","imageBase64":"<base64 JPEG>","localDate":"2026-11-26","timeZone":"Asia/Jakarta"}` to `POST $base/extract-task-image` with the same header. The mock returns a fixed extraction and uses one slot. The real Worker sends the image inline to Gemini and never stores it.
+
 A fresh process gives `demo-pro` 100 monthly slots. The sample analysis returns `{"difficultyScore":4,"estimatedMinutes":150}` and leaves 99 slots. `demo-free` and `demo-byok` return zero server slots and reject analysis with `PRO_REQUIRED`. `demo-unverified` returns `EMAIL_UNVERIFIED`. `demo-expired`, `demo-revoked`, and unknown tokens return `INVALID_AUTH`. Node listens on IPv4 loopback and accepts mock requests addressed to `127.0.0.1` on its listening port. Restarting Node resets mock usage.
 
 ## Supabase and providers

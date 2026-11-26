@@ -51,7 +51,10 @@ enum class IntegrationError(val message: String) {
     GOOGLE_CANCELLED("Login Google dibatalkan. Coba lagi kapan saja."),
     BROWSER_UNAVAILABLE("Browser tidak tersedia di perangkat ini."),
     VALIDATION_ERROR("Input tidak valid."),
-    PAYLOAD_TOO_LARGE("Ukuran input analisis melebihi 32 KiB."),
+    PAYLOAD_TOO_LARGE("Ukuran input melebihi batas."),
+    IMAGE_UNREADABLE("Gambar tidak dapat dibaca. Pilih foto JPG, PNG, atau WebP lain."),
+    SCAN_REQUIRES_AI("Scan foto tersedia untuk akun PRO atau BYOK Gemini."),
+    BYOK_GEMINI_REQUIRED("Scan foto dengan BYOK memerlukan provider Gemini."),
     PRO_REQUIRED("Analisis melalui server memerlukan PRO."),
     BYOK_REQUIRED("Akses ini memerlukan tier BYOK."),
     BYOK_KEY_MISSING("Isi kunci dan model provider terlebih dahulu."),
@@ -76,7 +79,7 @@ internal fun json(vararg fields: Pair<String, Any>): JSONObject =
 internal fun JSONObject.string(key: String): String =
     opt(key) as? String ?: fail(IntegrationError.INVALID_RESPONSE)
 
-private fun JSONObject.integer(key: String, range: IntRange): Int {
+internal fun JSONObject.integer(key: String, range: IntRange): Int {
     val number = (opt(key) as? Number)?.toDouble() ?: fail(IntegrationError.INVALID_RESPONSE)
     val integer = number.toInt()
     if (number != integer.toDouble() || integer !in range) fail(IntegrationError.INVALID_RESPONSE)

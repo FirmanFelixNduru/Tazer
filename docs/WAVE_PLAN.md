@@ -57,6 +57,12 @@ Tempel awalan itu sebelum instruksi peran. Lead memakai model yang ditetapkan pa
 2. Aktifkan provider Google di Supabase. Uji PKCE S256, state, callback sukses atau dibatalkan, email login, dan status provider di staging.
 3. Audit working tree, seluruh sejarah Git, dan APK sebelum publikasi. Build signed 1.5.0 kode 11 dan uji upgrade dari 1.4.0. Publikasikan APK dan checksum, lalu cek endpoint GitHub Releases serta status Cek Update pada aplikasi.
 
+## Gate rilis 1.6.0
+
+1. Uji `/extract-task-image` untuk token salah/kedaluwarsa/tercabut, tier FREE/PRO/BYOK, MIME/signature/base64, batas 2 MiB, kuota bersama dan persaingan, output AI tidak valid, serta nol panggilan AI pada cabang tanpa otorisasi. Deploy Worker lalu uji `/health`, `401`, `400`/`413`, dan satu scan nyata ke Gemini Free.
+2. Uji kompresi dan EXIF di perangkat, prefill form dari Photo Picker tanpa menyimpan sebelum ditinjau, serta pesan non-PRO. Uji Pengaturan Daily Briefing dengan spinner, persistensi, alarm terpasang dan dibatalkan, channel terpisah, deep link Jadwal/Statistik, serta penjadwalan ulang setelah reboot.
+3. Build APK signed 1.6.0 kode 12 dan uji upgrade dari signed 1.5.0 dengan akun dan data. Lakukan smoke test Light dan Dark, lint, secret scan histori dan APK, lalu publikasikan rilis dan cek Cek Update dari 1.5.0.
+
 ## Template handoff
 
 1. **Wave [N] — Langkah [X] dari [Y] (~[Z] menit).** [Aksi atau hasil inti, model dan effort aktual.]

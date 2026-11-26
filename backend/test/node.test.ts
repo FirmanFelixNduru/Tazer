@@ -71,7 +71,7 @@ test("Node bridge bounds chunked input and refuses mock traffic with a foreign H
     ...auth, "Content-Type": "application/json", "Transfer-Encoding": "chunked",
   }, [" ".repeat(16_385), " ".repeat(16_385)]);
   assert.equal(large.status, 413);
-  assert.deepEqual(large.body, { error: { code: "PAYLOAD_TOO_LARGE", message: "Ukuran input analisis melebihi 32 KiB." } });
+  assert.deepEqual(large.body, { error: { code: "PAYLOAD_TOO_LARGE", message: "Ukuran input melebihi batas." } });
   const foreignHost = await rawRequest(server, "/auth/session", { ...auth, Host: "external.example.invalid" });
   const foreignOrigin = await rawRequest(server, "/auth/session", { ...auth, Origin: "https://external.example.invalid" });
   assert.equal(foreignHost.status, 403);

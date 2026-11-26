@@ -34,6 +34,7 @@ internal fun call(
     headers: Map<String, String> = emptyMap(),
     body: JSONObject? = null,
     maxResponseBytes: Int = 256 * 1024,
+    timeoutMs: Int = 8_000,
 ): HttpResponse {
     val uri = URI(url)
     val connection = (if (uri.scheme == "http") {
@@ -47,7 +48,7 @@ internal fun call(
         connection.instanceFollowRedirects = false
         connection.useCaches = false
         connection.connectTimeout = 8_000
-        connection.readTimeout = 8_000
+        connection.readTimeout = timeoutMs
         connection.setRequestProperty("Accept", "application/json")
         connection.setRequestProperty("Cache-Control", "no-store")
         headers.forEach { (key, value) -> connection.setRequestProperty(key, value) }
