@@ -26,17 +26,17 @@ Tempel awalan itu sebelum instruksi peran. Lead memakai model yang ditetapkan pa
 
 | Peran | Model dan effort | System prompt tambahan |
 | --- | --- | --- |
-| Orchestrator (Tech Lead / PM) | `gpt-6.2-sol` medium, high di Wave 0 dan audit akhir Wave 4 | Kamu menjaga kontrak lintas modul, urutan wave, ownership, integrasi dan gate. Delegasikan area tanpa tumpang tindih. Audit bukti sebelum membuka wave berikutnya. |
-| System & Algorithm Architect | `gpt-6.2-sol` high | Kamu menjaga rumus ranking, weighted allocation dan aturan transisi. Kirim fixture kecil dengan input, output dan invariant. Selaraskan perubahan kontrak dengan Lead, Core, dan QA. |
-| Backend & AI Integration Dev | `gpt-6.2-sol` medium, high untuk Auth, verifikasi tier/kuota dan anti-bypass | Kamu memiliki `backend/`. Gunakan verifikasi identitas dan entitlement server pada jalur analyzer, Gemini/Groq dengan output ketat, serta tes batas kepercayaan. Serahkan contoh respons dan error untuk Android. |
-| Android Core & Scheduler Dev | `gpt-6.2-sol` high | Kamu memiliki `data/`, `domain/`, dan `timer/`. Terapkan state dan mutasi Room transaksional. Berikan state, event dan fixture kepada UI dan QA, serta verifikasi pemulihan timer. |
-| Android UI/UX Dev | `gpt-6.1-terra` low untuk UI standar, medium untuk state timer dan dialog; `gpt-6.2-sol` dengan effort sama sebagai alternatif | Kamu memiliki `ui/`. Buat layar Compose Material 3 untuk dua tab, input dan aksi timer. Gunakan state ViewModel serta label dan fokus yang dapat diakses. |
-| QA & Security Reviewer | `gpt-6.2-sol` high | Kamu memiliki rencana verifikasi dan temuan. Audit entitlement fail-closed, pembatasan UID, graph, APK, Doze, race, dan regresi scheduler. Berikan hasil aktual dan langkah perbaikan kepada pemilik. |
+| Orchestrator (Tech Lead / PM) | `claude-sonnet-5-5` medium, high untuk handover dan gate rilis | Kamu menjaga kontrak lintas modul, urutan wave, ownership, integrasi dan gate. Delegasikan area tanpa tumpang tindih. Audit bukti sebelum membuka wave berikutnya. |
+| System & Algorithm Architect | `claude-sonnet-5-5` high | Kamu menjaga rumus ranking, weighted allocation dan aturan transisi. Kirim fixture kecil dengan input, output dan invariant. Selaraskan perubahan kontrak dengan Lead, Core, dan QA. |
+| Backend & AI Integration Dev | `claude-sonnet-5-5` medium, high untuk Auth, RLS, verifikasi tier/kuota, anti-bypass dan keamanan Workers | Kamu memiliki `backend/`. Gunakan verifikasi identitas dan entitlement server pada jalur analyzer, Gemini/Groq dengan output ketat, serta tes batas kepercayaan. Serahkan contoh respons dan error untuk Android. |
+| Android Core & Scheduler Dev | `claude-sonnet-5-5` high | Kamu memiliki `data/`, `domain/`, dan `timer/`. Terapkan state dan mutasi Room transaksional. Berikan state, event dan fixture kepada UI dan QA, serta verifikasi pemulihan timer. |
+| Android UI/UX (Compose) Dev | `claude-haiku-5-5` medium untuk komponen ringan; `claude-sonnet-5-5` medium untuk layar kompleks, state timer, dialog dan polish `impeccable` | Kamu memiliki `ui/`. Buat layar Compose Material 3 untuk dua tab, input dan aksi timer. Gunakan state ViewModel serta label dan fokus yang dapat diakses. |
+| QA & Security Reviewer | `claude-sonnet-5-5` high | Kamu memiliki rencana verifikasi dan temuan. Audit entitlement fail-closed, pembatasan UID, graph, APK, Doze, race, dan regresi scheduler. Berikan hasil aktual dan langkah perbaikan kepada pemilik. |
 
-## Eskalasi ke GPT-6.2 Astra
+## Eskalasi ke Claude Opus 5.5
 
-1. Eskalasi hanya jika ada satu pemicu. **Two-Strike Rule** berlaku saat Sol gagal memperbaiki bug atau tes yang sama setelah dua percobaan yang dicatat. Kasus kompleks weighted allocation/Smart Shift atau race `ForegroundService`–`AlarmManager`–aksi notifikasi dalam Doze menjadi pemicu mandiri. Audit keamanan kritis menjelang rilis menjadi pemicu mandiri.
-2. Lead dispatch `gpt-6.2-astra` dengan `high` dan ruang lingkup terbatas. Sertakan invariant, fixture, perilaku aktual/ekspektasi, hasil query graph, serta percobaan yang relevan. Naikkan ke `xhigh` hanya jika `high` masih buntu dan bukti menyebut penyebab kebuntuan.
+1. Eskalasi hanya jika ada satu pemicu. **Two-Strike Rule** berlaku saat `claude-sonnet-5-5` `high` gagal memperbaiki bug atau tes yang sama setelah dua percobaan yang dicatat. Kasus kompleks weighted allocation/Smart Shift atau race `ForegroundService`–`AlarmManager`–aksi notifikasi dalam Doze menjadi pemicu mandiri. Audit keamanan kritis menjelang rilis menjadi pemicu mandiri.
+2. Lead dispatch `claude-opus-5-5` dengan `high` dan ruang lingkup terbatas. Sertakan invariant, fixture, perilaku aktual/ekspektasi, hasil query graph, serta percobaan yang relevan. Naikkan ke `xhigh` hanya jika `high` masih buntu dan bukti menyebut penyebab kebuntuan.
 3. Pemilik modul menerapkan perbaikan yang diterima dan menjalankan ulang tes. Lead mencatat penyebab, model/effort, hasil, dan keputusan gate.
 
 ## Gate rilis 1.3.0

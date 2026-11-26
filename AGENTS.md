@@ -6,7 +6,23 @@
 2. Terapkan `graphify`, `ponytail`, dan `i-have-adhd` di awal setiap penugasan. Skill wajib keempat, `impeccable`, berlaku untuk desain, redesign, hierarki, tipografi, warna, dan polish UI Android Compose. Baca `C:/Users/HP/.gemini/config/skills/impeccable/SKILL.md` sebelum mengerjakan UI dan verifikasi hasil render pada perangkat atau emulator. Ikuti perintah dan format handoff di bawah.
 3. Jaga batas modul. Android mengelola tugas, jadwal, dan timer lokal per UID. Backend mengelola verifikasi identitas, tier dan kuota Supabase, dan proxy AI. Android memakai Kotlin, Jetpack Compose Material 3, ViewModel, dan Room dalam satu Gradle module `:app`.
 4. Jaga biaya Rp 0 hingga rilis. Pakai layanan free tier tanpa kartu kredit dan distribusikan APK sideload. Simpan kunci server Gemini/Groq dan secret Supabase hanya di server. Backend memverifikasi sesi Supabase serta tier dan kuota sebelum AI. Kunci BYOK milik user dienkripsi di perangkat dan dipakai langsung ke provider.
-5. Tutup tugas setelah pemeriksaan yang relevan lulus dan hasilnya tercatat. Eskalasi ke `gpt-6.2-astra` hanya setelah dua percobaan Sol gagal pada bug atau tes yang sama, saat ada kasus scheduler/lifecycle kompleks, atau saat audit keamanan kritis menjelang rilis. Mulai dengan `high`. Pakai `xhigh` hanya bila `high` masih buntu. Ikuti dispatch dan bukti yang diminta di [rencana eksekusi](docs/WAVE_PLAN.md).
+5. Tutup tugas setelah pemeriksaan yang relevan lulus dan hasilnya tercatat. Eskalasi ke `claude-opus-5-5` hanya setelah dua percobaan `claude-sonnet-5-5` `high` gagal pada bug atau tes yang sama, saat ada kasus scheduler/lifecycle atau race kompleks, atau saat audit keamanan kritis menjelang rilis. Mulai dengan `high`. Pakai `xhigh` hanya bila `high` masih buntu. Ikuti dispatch dan bukti yang diminta di [rencana eksekusi](docs/WAVE_PLAN.md).
+
+## Tim Orkestra Claude 5.5
+
+Sejak 26 November 2026 seluruh peran dikerjakan Tim Orkestra Claude. Orchestrator mencatat model dan effort aktual pada setiap dispatch dan handoff.
+
+| Peran | Model dan effort |
+| --- | --- |
+| Orchestrator (Tech Lead / PM) | `claude-sonnet-5-5` medium; high untuk handover dan gate rilis |
+| System & Algorithm Architect | `claude-sonnet-5-5` high |
+| Backend & AI Integration Dev | `claude-sonnet-5-5` medium; high untuk Auth, RLS, tier/kuota, dan keamanan Workers |
+| Android Core & Scheduler Dev | `claude-sonnet-5-5` high |
+| Android UI/UX (Compose) Dev | `claude-haiku-5-5` medium untuk komponen ringan; `claude-sonnet-5-5` medium untuk layar kompleks dan polish `impeccable` |
+| QA & Security Reviewer | `claude-sonnet-5-5` high |
+| Eskalasi | `claude-opus-5-5` high, `xhigh` hanya saat buntu total; pemicu sesuai aturan 5 |
+
+AI di dalam aplikasi tetap memakai Gemini Free Tier melalui Cloudflare Workers dan Supabase Free. Model Claude hanya dipakai untuk pengembangan.
 
 ## Batas modul dan struktur target
 
